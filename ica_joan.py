@@ -5,7 +5,7 @@ import numpy as np
 from sklearn.decomposition import PCA, FastICA
 from dataclasses import dataclass
 import os
-from typing import List, Tuple
+from typing import List, Tuple, Callable
 import matplotlib.pyplot as plt
 import tkinter as tk
 from tkinter import ttk
@@ -15,7 +15,7 @@ from tkinter import ttk
 class VideoData:
     """Information of the loaded video."""
 
-    frames: np.ndarray
+    flat_frames: np.ndarray
     frame_shape: Tuple[int, int]
     fps: int
 
@@ -31,7 +31,7 @@ class DecompositionResult:
 
 def save_frame_as_image(frame: np.ndarray, filename: str) -> None:
     """Save a single frame as an image file."""
-    cv2.imwrite(filename, frame)
+    cv2.imwrite(f"intermediate_frames/{filename}", frame)
 
 
 def process_video(video_path: str) -> VideoData:
@@ -50,9 +50,7 @@ def process_video(video_path: str) -> VideoData:
 
         # Save a few original frames
         if frame_count < 5:
-            save_frame_as_image(
-                frame_gray, f"intermediate_frames/original_frame_{frame_count}.png"
-            )
+            save_frame_as_image(frame_gray, f"original_frame_{frame_count}.png")
 
         if frame_shape is None:
             frame_shape = frame_gray.shape
@@ -99,7 +97,7 @@ def reconstruct_pca_from_ica(
     return reconstructed_components_pca
 
 
-def frame_array_from_pca(
+def video_from_pca(
     pca, pca_components: np.ndarray, frame_shape: Tuple[int, int]
 ) -> np.ndarray:
     """Reconstruct the video frames from the PCA data."""
@@ -111,7 +109,7 @@ def frame_array_from_pca(
     return frames
 
 
-def frame_array_from_ica(
+def video_from_ica(
     pca: PCA,
     ica_result: DecompositionResult,
     selected_components: List[bool],
@@ -121,36 +119,35 @@ def frame_array_from_ica(
     reconstructed_components_pca = reconstruct_pca_from_ica(
         ica_result, selected_components
     )
-    reconstructed_frames = frame_array_from_pca(
+    reconstructed_frames = video_from_pca(
         pca, reconstructed_components_pca, frame_shape
     )
 
     # Save a few reconstructed frames as images
     for i in range(5):
-        save_frame_as_image(
-            reconstructed_frames[i], f"intermediate_frames/reconstructed_frame_{i}.png"
-        )
+        save_frame_as_image(reconstructed_frames[i], f"reconstructed_frame_{i}.png")
 
     return reconstructed_frames
 
 
-def frame_array_from_nth_ica(
+def video_from_nth_ica(
     pca: PCA,
     ica_result: DecompositionResult,
     component: int,
     frame_shape: Tuple[int, int],
 ) -> np.ndarray:
+    """Create the array of frames for the nth ica component."""
     n_final_components = ica_result.components.shape[1]
     selected_components = [False for i in range(n_final_components)]
     selected_components[component] = True
-    processed_frames_array = frame_array_from_ica(
-        pca_result.model, ica_result, selected_components, video_data_flat.frame_shape
+    processed_frames_array = video_from_ica(
+        pca_result.model, ica_result, selected_components, video_data.frame_shape
     )
     return processed_frames_array
 
 
-def save_frames_as_video(
-    frames: np.ndarray,
+def save_video_as_mp4(
+    video: np.ndarray,
     frame_shape: Tuple[int, int],
     fps: int,
     output_path: str = "output_video.mp4",
@@ -161,15 +158,14 @@ def save_frames_as_video(
         output_path, fourcc, fps, (frame_shape[1], frame_shape[0]), isColor=False
     )
 
-    for frame in frames:
+    for frame in video:
         out.write(frame)
 
     out.release()
     print(f"Video saved as {output_path}")
 
-    ## TODO (first frame is not sufficient)
 
-
+# TODO (first frame is not sufficient)
 def plot_ica_components(
     ica_result: DecompositionResult, pca: PCA, frame_shape: Tuple[int, int]
 ):
@@ -181,7 +177,7 @@ def plot_ica_components(
         selected_components = [
             True if j == i else False for j in range(0, n_components)
         ]
-        reconstructed_frames = frame_array_from_ica(
+        reconstructed_frames = video_from_ica(
             pca, ica_result, selected_components, frame_shape
         )
         component_image = reconstructed_frames[0]
@@ -192,7 +188,7 @@ def plot_ica_components(
     plt.show()
 
 
-def select_ica_components(n_components: int) -> List[bool]:
+def select_ica_components_interactive(n_components: int) -> List[bool]:
     """Use a GUI to select which ICA components to include."""
     root = tk.Tk()
     root.title("Select ICA Components")
@@ -214,39 +210,111 @@ def select_ica_components(n_components: int) -> List[bool]:
     return [var.get() for var in selected_components]
 
 
-def save_ica_components_videos(ica_result, pca_result, video_data_flat):
+def save_pca_components_videos(pca_result, video_data):
+    """Save each pca component as an mp4 to visualize them independently."""
+    for i in range(0, pca_result.n_components):
+        inverted_indices = [j for j in range(pca_result.n_components) if j != i]
+        selected_pca = pca_result.components.copy()
+        selected_pca[:, inverted_indices] = 0
+        processed_frames_array = video_from_pca(
+            pca_result.model,
+            selected_pca,
+            video_data.frame_shape,
+        )
+        save_video_as_mp4(
+            processed_frames_array,
+            video_data.frame_shape,
+            video_data.fps,
+            f"output_component_{i}.mp4",
+        )
+
+
+def save_ica_components_videos(ica_result, pca_result, video_data):
     """Save each component as an mp4 to visualize them independently."""
     n_final_components = ica_result.components.shape[1]
     for i in range(0, n_final_components):
         selected_components = [False for i in range(n_final_components)]
         selected_components[i] = True
-        processed_frames_array = frame_array_from_ica(
+        processed_frames_array = video_from_ica(
             pca_result.model,
             ica_result,
             selected_components,
-            video_data_flat.frame_shape,
+            video_data.frame_shape,
         )
-        save_frames_as_video(
+        save_video_as_mp4(
             processed_frames_array,
-            video_data_flat.frame_shape,
-            video_data_flat.fps,
+            video_data.frame_shape,
+            video_data.fps,
             f"output_component_{i}.mp4",
         )
+
+
+def save_ica_components_frames(ica_result, pca_result, video_data):
+    """Save each component frames as png to visualize them independently."""
+    n_final_components = ica_result.components.shape[1]
+    for i in range(0, n_final_components):
+        selected_components = [False for i in range(n_final_components)]
+        selected_components[i] = True
+        processed_frames_array = video_from_ica(
+            pca_result.model,
+            ica_result,
+            selected_components,
+            video_data.frame_shape,
+        )
+        for j, frame in enumerate(processed_frames_array):
+            save_frame_as_image(frame, f"component_{i}_frame_{j}.png")
 
 
 def detect_horizontal_noise(
     pca: PCA, ica_result: DecompositionResult, frame_shape: Tuple[int, int]
 ) -> List[float]:
+    """Compute a score for each component to try to detect the horizontal noise."""
     scores = []
     for i in range(ica_result.components.shape[1]):
-        component = frame_array_from_nth_ica(pca, ica_result, i, frame_shape)
+        component = video_from_nth_ica(pca, ica_result, i, frame_shape)
 
         # Apply Sobel filter to detect horizontal edges
         sobel_horizontal = cv2.Sobel(component[0], cv2.CV_64F, 1, 0, ksize=5)
+        if i < 5:
+            save_frame_as_image(sobel_horizontal, f"sobel_frame_{i}.png")
         score = np.sum(np.abs(sobel_horizontal))
         scores.append(score)
 
     return scores
+
+
+# Realment no detecta res, son linies massa poc concretes
+def detect_and_remove_horizontal_lines(image: np.ndarray) -> np.ndarray:
+    """Detect and remove horizontal lines from an image using Hough Line Transform."""
+    edges = cv2.Canny(image, 50, 150, apertureSize=3)
+    lines = cv2.HoughLinesP(
+        edges, 1, np.pi / 180, threshold=100, minLineLength=100, maxLineGap=10
+    )
+    print(f"Detected {lines} lines")
+
+    mask = (
+        np.ones_like(image, dtype=np.uint8) * 255
+    )  # Initialize mask with white background
+
+    if lines is not None:
+        for line in lines:
+            x1, y1, x2, y2 = line[0]
+            if abs(y2 - y1) < 10:  # Horizontal line condition
+                cv2.line(mask, (x1, y1), (x2, y2), 0, thickness=2)
+
+    cleaned_image = cv2.bitwise_and(image, mask)
+    return cleaned_image
+
+
+def test_filter_first_frames(
+    video: np.ndarray,
+    filter: Callable[[np.ndarray], np.ndarray],
+    output_path: str = "filtered",
+) -> np.ndarray:
+    """Apply the filter function (from image to image) to the first frames of the videos to test it."""
+    for i in range(0, 5):
+        filtered = detect_and_remove_horizontal_lines(video[i])
+        save_frame_as_image(filtered, f"{output_path}_frame_{i}.png")
 
 
 # Ensure the intermediate frames directory exists
@@ -254,25 +322,38 @@ os.makedirs("intermediate_frames", exist_ok=True)
 
 # Load and process video frames
 video_path = "0.mp4"
-video_data_flat = process_video(video_path)
+video_data = process_video(video_path)
 
 # Print shape of frames array
-print("Shape of flat frames array:", video_data_flat.frames.shape)
+print("Shape of flat frames array:", video_data.flat_frames.shape)
 
-# Apply PCA for dimensionality reduction
-n_components_pca = 100  # Use the same number of components for both PCA and ICA
-pca_result = apply_pca(video_data_flat.frames, n_components_pca)
+# Batch apply
+n_components_pca = 60  # Use the same number of components for both PCA and ICA
+pca_result = apply_pca(video_data.flat_frames[0:60, :], n_components_pca)
+
+save_pca_components_videos(pca_result, video_data)
 
 # Apply ICA on PCA-transformed data
-n_components_ica = 10
-ica_result = apply_ica(pca_result.components, n_components_ica)
+#n_components_ica = 20
+#ica_result = apply_ica(pca_result.components, n_components_ica)
+#save_ica_components_videos(ica_result, pca_result, video_data)
+
+# Apply PCA for dimensionality reduction
+# n_components_pca = 100  # Use the same number of components for both PCA and ICA
+# pca_result = apply_pca(video_data_flat.frames, n_components_pca)
+#
+## Apply ICA on PCA-transformed data
+# n_components_ica = 10
+# ica_result = apply_ica(pca_result.components, n_components_ica)
 
 # Plot ICA components for visualization
-#plot_ica_components(ica_result, pca_result.model, video_data_flat.frame_shape)
+# plot_ica_components(ica_result, pca_result.model, video_data_flat.frame_shape)
 
 # Select components to keep
 # selected_components = select_ica_components(n_components_ica)
-print(detect_horizontal_noise(pca_result.model, ica_result, video_data_flat.frame_shape))
+# print(
+#    detect_horizontal_noise(pca_result.model, ica_result, video_data_flat.frame_shape)
+# )
 
 # Reconstruct frames from selected ICA components
 # processed_frames_array = frame_array_from_ica(
@@ -280,4 +361,13 @@ print(detect_horizontal_noise(pca_result.model, ica_result, video_data_flat.fram
 # )
 # print("Shape of reconstructed frames:", processed_frames_array.shape)
 
-save_ica_components_videos(ica_result, pca_result, video_data_flat)
+
+
+# for i in range(ica_result.n_components):
+#    test_filter_first_frames(
+#        video_from_nth_ica(
+#            pca_result.model, ica_result, i, video_data_flat.frame_shape
+#        ),
+#        detect_and_remove_horizontal_lines,
+#        f"filtered_component_{i}",
+#    )
