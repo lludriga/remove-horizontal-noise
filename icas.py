@@ -188,7 +188,7 @@ class VideoICA:
 
 # Example usage
 def run_analysis():
-    dir = '/clinicfs/userhomes/vteruel/anna/videos'
+    dir = '.'
     avi_files = [os.path.join(dir, f) for f in os.listdir(dir) if f.endswith('.avi') and not f.startswith('p_')]
     avi_files.sort()
     print(avi_files)

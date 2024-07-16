@@ -1,3 +1,4 @@
 .direnv/
 *.jpg
 *.png
+output**.mp4
