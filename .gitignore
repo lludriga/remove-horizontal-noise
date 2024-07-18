@@ -2,3 +2,5 @@
 *.jpg
 *.png
 output**.mp4
+__pycache__/
+all_frames/
