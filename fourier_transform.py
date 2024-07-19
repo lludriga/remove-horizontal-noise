@@ -17,8 +17,9 @@ def remove_horizontal_noise(image):
     # Remove horizontal lines by zeroing out specific frequencies
     center_column = cols // 2
     center_row = rows // 2
-    mask[0:center_row - 7, center_column-2:center_column+2] = 0
-    mask[center_row + 7:rows-1, center_column-2:center_column+2] = 0
+    radius_not_removed = 4
+    mask[0:center_row - radius_not_removed, center_column-2:center_column+2] = 0
+    mask[center_row + radius_not_removed:rows-1, center_column-2:center_column+2] = 0
 
     # Apply mask and perform the inverse DFT
     fshift = dft_shift * mask
