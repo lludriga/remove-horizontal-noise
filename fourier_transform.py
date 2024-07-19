@@ -1,12 +1,13 @@
 """Llevar bandes horitzontals de videos amb la transformada de fourier."""
 
-import numpy as np
 import cv2
+import numpy as np
+
 
 def remove_horizontal_noise(image):
     # Convert image to float32 for DFT
     dft = cv2.dft(np.float32(image), flags=cv2.DFT_COMPLEX_OUTPUT)
-    
+
     # Shift zero-frequency component to the center of the spectrum
     dft_shift = np.fft.fftshift(dft)
 
@@ -18,31 +19,37 @@ def remove_horizontal_noise(image):
     center_column = cols // 2
     center_row = rows // 2
     radius_not_removed = 4
-    mask[0:center_row - radius_not_removed, center_column-2:center_column+2] = 0
-    mask[center_row + radius_not_removed:rows-1, center_column-2:center_column+2] = 0
+    mask[0:center_row - radius_not_removed, center_column - 2:center_column + 2] = 0
+    mask[
+        center_row + radius_not_removed:rows - 1,
+        center_column - 2:center_column + 2,
+    ] = 0
 
     # Apply mask and perform the inverse DFT
     fshift = dft_shift * mask
     f_ishift = np.fft.ifftshift(fshift)
     img_back = cv2.idft(f_ishift)
-    
+
     # Get the magnitude
     img_back = cv2.magnitude(img_back[:, :, 0], img_back[:, :, 1])
 
     # Normalize the image to the range [0, 255]
     img_back = cv2.normalize(img_back, None, 0, 255, cv2.NORM_MINMAX)
     img_back = np.uint8(img_back)
-    
+
     return img_back
 
+
 # Process video
-cap = cv2.VideoCapture('0.mp4')
+cap = cv2.VideoCapture("0.mp4")
 frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
 frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 fps = int(cap.get(cv2.CAP_PROP_FPS))
-fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+fourcc = cv2.VideoWriter_fourcc(*"mp4v")
 
-out = cv2.VideoWriter('output_video.mp4', fourcc, fps, (frame_width, frame_height), isColor=False)
+out = cv2.VideoWriter(
+    "output_video.mp4", fourcc, fps, (frame_width, frame_height), isColor=False
+)
 
 
 print("Started processing video")
