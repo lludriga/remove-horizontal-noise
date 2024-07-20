@@ -105,6 +105,35 @@ def apply_pca(frames: np.ndarray, n_components: int) -> DecompositionResult:
     return DecompositionResult(pca, components_pca, n_components)
 
 
+def n_pca_components_from_variance(pca: PCA, variance_threshold: float) -> int:
+    """Get the number of components needed to conserve the specified acumulated variance (between 0 and 1)."""
+    cumulative_variance = np.cumsum(pca.explained_variance_ratio_)
+    n_components = np.searchsorted(cumulative_variance, variance_threshold) + 1
+    return int(n_components)
+
+
+def plot_cumulative_variance(pca: PCA) -> None:
+    """
+    Plot the cumulative explained variance against the number of PCA components.
+
+    Parameters:
+    pca (PCA): The PCA object after fitting the data.
+    """
+    cumulative_variance = np.cumsum(pca.explained_variance_ratio_)
+    plt.figure(figsize=(8, 6))
+    plt.plot(
+        np.arange(1, len(cumulative_variance) + 1),
+        cumulative_variance,
+        marker="o",
+        linestyle="-",
+    )
+    plt.xlabel("Number of Components")
+    plt.ylabel("Cumulative Explained Variance")
+    plt.title("Cumulative Explained Variance by Number of PCA Components")
+    plt.grid()
+    plt.show()
+
+
 def apply_ica(components: np.ndarray, n_components) -> DecompositionResult:
     """Apply ICA to the input array with n components."""
     print("Applying ICA")
@@ -113,6 +142,20 @@ def apply_ica(components: np.ndarray, n_components) -> DecompositionResult:
     print(f"Finished ICA. Shape {components_ica.shape}")
 
     return DecompositionResult(ica, components_ica, n_components)
+
+
+# TODO use the covariance to get the pca components used
+def apply_pca_and_ica(
+    flat_frames: np.ndarray, n_components: int
+) -> Tuple[DecompositionResult, DecompositionResult]:
+    """Apply PCA and ICA to the selected video data."""
+    n_components_pca = n_components
+    pca_result = apply_pca(flat_frames, n_components_pca)
+
+    n_components_ica = n_components_pca
+    ica_result = apply_ica(pca_result.components, n_components_ica)
+
+    return pca_result, ica_result
 
 
 def reconstruct_pca_from_ica(
@@ -278,9 +321,11 @@ def select_ica_components_interactive(n_components: int) -> List[bool]:
     return [var.get() for var in selected_components]
 
 
-def save_pca_components_videos(pca_result, video_data):
+def save_pca_components_videos(
+    pca_result: DecompositionResult, video_data: VideoData
+) -> None:
     """Save each pca component as an mp4 to visualize them independently."""
-    for i in range(0, pca_result.n_components):
+    for i in range(pca_result.n_components):
         video = video_from_nth_pca(pca_result, i)
         save_video_as_mp4(
             video,
@@ -290,10 +335,14 @@ def save_pca_components_videos(pca_result, video_data):
         )
 
 
-def save_ica_components_videos(ica_result, pca_result, video_data):
+def save_ica_components_videos(
+    ica_result: DecompositionResult,
+    pca_result: DecompositionResult,
+    video_data: VideoData,
+) -> None:
     """Save each component as an mp4 to visualize them independently."""
     n_final_components = ica_result.components.shape[1]
-    for i in range(0, n_final_components):
+    for i in range(n_final_components):
         video = video_from_nth_ica(
             pca_result.model,
             ica_result,
@@ -307,7 +356,11 @@ def save_ica_components_videos(ica_result, pca_result, video_data):
         )
 
 
-def save_ica_components_frames(ica_result, pca_result, video_data):
+def save_ica_components_frames(
+    ica_result: DecompositionResult,
+    pca_result: DecompositionResult,
+    video_data: VideoData,
+) -> None:
     """Save each component frames as png to visualize them independently."""
     n_final_components = ica_result.components.shape[1]
     for i in range(0, n_final_components):
@@ -330,7 +383,7 @@ def save_first_frames_filtered(
     n_frames: int = 5,
 ) -> None:
     """Apply the filter function (from image to image) to the first frames of the videos to test it."""
-    for i in range(0, min(n_frames, video.shape[0])):
+    for i in range(min(n_frames, video.shape[0])):
         filtered = filter(video[i])
         save_frame_as_image(filtered, f"{output_path}_frame_{i}.png")
 
@@ -358,7 +411,9 @@ def plot_flat_frames(frames: np.ndarray, n: int = 5) -> None:
     plt.show()
 
 
-def analyze_and_select_frames(flat_frames: np.ndarray) -> List[bool]:
+def analyze_and_select_frames(
+    flat_frames: np.ndarray, batch_size: int = 3
+) -> List[bool]:
     """
     Analyze the frames statistically to try to remove the ones without noise.
 
@@ -369,31 +424,25 @@ def analyze_and_select_frames(flat_frames: np.ndarray) -> List[bool]:
     supposedly. We choose 2 out of 3 every time, since the noise doesn't happen (apparently)
     3 frames.
     """
-    batch = 3
-    remaining_frames = flat_frames.shape[0] % batch
+    n_frames = flat_frames.shape[0]
+    remaining_frames = flat_frames.shape[0] % batch_size
     selected_frames: List[bool] = []
-    for j in range(flat_frames.shape[0] // batch):
-        frame_mean: np.ndarray = np.zeros(batch)
-        for i in range(batch):
-            frame_mean[i] = np.mean(flat_frames[j * batch + i])
 
-        max_accepted_mean = np.quantile(frame_mean, 0.66)
-
-        for mean in frame_mean:
-            if mean <= max_accepted_mean:
-                selected_frames.append(True)
-            else:
-                selected_frames.append(False)
+    for i in range(n_frames // batch_size):
+        batch_mean = np.array(
+            [np.mean(flat_frames[i * batch_size + j]) for j in range(batch_size)]
+        )
+        max_accepted_mean = np.quantile(batch_mean, 0.66)
+        selected_frames.extend([mean <= max_accepted_mean for mean in batch_mean])
 
     # Since the remaining batch is smaller than what we analyze
     # we do the easy thing and just include it all
-    for i in range(remaining_frames):
-        selected_frames.append(True)
+    selected_frames.extend([True] * remaining_frames)
 
     return selected_frames
 
 
-def review_ica_components(
+def review_ica_components_interactively(
     ica_result: DecompositionResult, pca: PCA, frame_shape: Tuple[int, int], fps: int
 ) -> List[bool]:
     """Interactively review each ICA component and decide whether to keep it."""
@@ -429,6 +478,15 @@ def review_ica_components(
     return selected_components
 
 
+def variance_image_from_video(
+    video: np.ndarray,
+    frame_shape: Tuple[int, int],
+) -> np.ndarray:
+    flat_image = np.var(video, axis=0)
+    flat_image = (flat_image / np.max(flat_image) ) * 255
+    return flat_image.reshape(*frame_shape)
+
+
 def reconstruct_full_video(
     original_video_data: VideoData,
     selected_frames: List[bool],
@@ -449,52 +507,113 @@ def reconstruct_full_video(
     return full_video
 
 
+# TODO Choose pca components based on covariance (at least 80%)
+def filter_black_lines_video_ica_interactively(
+    video_path: str, n_components: int, output_path: str = "output_video.mp4"
+) -> None:
+    """Full pipeline for filtering a video from it's ica's and saving it."""
+    # Load the video into a flat array (a 2D matrix)
+    video_data: VideoData = process_video(video_path)
+
+    # Select frames with potential noise
+    selected_frames: List[bool] = analyze_and_select_frames(video_data.flat_frames)
+
+    print(
+        """The ica anlyisis will be applied to the following frames
+    which are most probably noisy, based on the assumption that
+    they have black lines of noise (the mean birghtness is lower):"""
+    )
+    print(np.array(range(len(selected_frames)))[selected_frames])
+    selected_video_data = VideoData(
+        video_data.flat_frames[selected_frames], video_data.frame_shape, video_data.fps
+    )
+
+    # Apply PCA and ICA
+    pca_result, ica_result = apply_pca_and_ica(
+        selected_video_data.flat_frames, n_components
+    )
+
+    # Review ICA component manually
+    selected_ica_components = review_ica_components_interactively(
+        ica_result, pca_result.model, video_data.frame_shape, video_data.fps
+    )
+
+    # Reconstruct the selected frames with the selected ICA components
+    reconstructed_selected_frames = video_from_ica(
+        pca_result.model, ica_result, selected_ica_components
+    )
+
+    # Reconstruct the full video including non-noisy frames
+    full_reconstructed_video = reconstruct_full_video(
+        video_data, selected_frames, reconstructed_selected_frames
+    )
+
+    # Save the full reconstructed video
+    save_video_as_mp4(
+        full_reconstructed_video,
+        video_data.frame_shape,
+        video_data.fps,
+        output_path,
+    )
+
 
 # Ensure the intermediate frames directory exists
 os.makedirs("intermediate_frames", exist_ok=True)
 
 video_path = "0.avi"
-video_data = process_video(video_path)
+n_components = 50
 
-# Print shape of frames array
-print("Shape of flat frames array:", video_data.flat_frames.shape)
 
-selected_frames = analyze_and_select_frames(video_data.flat_frames)
+## Select frames with potential noise
+# selected_frames: List[bool] = analyze_and_select_frames(video_data.flat_frames)
+#
+# print(
+# """The ica anlyisis will be applied to the following frames
+# which are most probably noisy, based on the assumption that
+# they have black lines of noise (the mean birghtness is lower):"""
+# )
+# print(np.array(range(len(selected_frames)))[selected_frames])
+# selected_video_data = VideoData(
+# video_data.flat_frames[selected_frames], video_data.frame_shape, video_data.fps
+# )
+#
+# pca_result = apply_pca(selected_video_data.flat_frames, selected_video_data.flat_frames.shape[0])
+# plot_cumulative_variance(pca_result.model)
 
-# Check the selected frames
-for i in range(len(selected_frames)):
-    if selected_frames[i]:
-        print(i)
+video_data: VideoData = process_video(video_path)
+video_data.flat_frames = video_data.flat_frames[0:200,:]
 
+# Select frames with potential noise
+selected_frames: List[bool] = analyze_and_select_frames(video_data.flat_frames)
+
+print(
+    """The ica anlyisis will be applied to the following frames
+    which are most probably noisy, based on the assumption that
+    they have black lines of noise (the mean birghtness is lower):"""
+)
+print(np.array(range(len(selected_frames)))[selected_frames])
 selected_video_data = VideoData(
     video_data.flat_frames[selected_frames], video_data.frame_shape, video_data.fps
 )
 
-
-n_components_pca = 3
-pca_result = apply_pca(selected_video_data.flat_frames, n_components_pca)
-
-n_components_ica = n_components_pca
-ica_result = apply_ica(pca_result.components, n_components_ica)
-
-selected_ica_components = review_ica_components(
-    ica_result, pca_result.model, video_data.frame_shape, video_data.fps
+# Apply PCA and ICA
+pca_result, ica_result = apply_pca_and_ica(
+    selected_video_data.flat_frames, n_components
 )
 
-# Reconstruct the selected frames with the selected ICA components
-reconstructed_selected_frames = video_from_ica(
-    pca_result.model, ica_result, selected_ica_components
-)
+for i in range(n_components):
+    save_frame_as_image(
+        variance_image_from_video(
+            video_from_nth_pca(pca_result, i), video_data.frame_shape
+        ),
+        f"variance_pca_component_{i}.png",
+    )
 
-# Reconstruct the full video including non-noisy frames
-full_reconstructed_video = reconstruct_full_video(
-    video_data, selected_frames, reconstructed_selected_frames
-)
 
-# Save the full reconstructed video
-save_video_as_mp4(
-    full_reconstructed_video,
-    video_data.frame_shape,
-    video_data.fps,
-    "full_reconstructed_video.mp4",
-)
+for i in range(n_components):
+    save_frame_as_image(
+        variance_image_from_video(
+            video_from_nth_ica(pca_result.model, ica_result, i), video_data.frame_shape
+        ),
+        f"variance_component_{i}.png",
+    )
