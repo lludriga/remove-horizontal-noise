@@ -4,12 +4,13 @@ import os
 import tkinter as tk
 from abc import ABC, abstractmethod
 from tkinter import messagebox, ttk
-from typing import Callable, Iterable, List, Tuple
+from typing import Callable, Iterable, List, Optional
 
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from scipy.ndimage import gaussian_filter
 from sklearn.decomposition import PCA, FastICA  # type: ignore
 
 
@@ -122,13 +123,14 @@ class IndividualComponentSelectorGUI(ComponentSelector):
         self.plot_component()
 
     def finish_selection(self):
+        if hasattr(self, "canvas") and self.canvas:
+            plt.close(self.canvas.figure)  # Close the last figure
         self.root.quit()
         self.root.destroy()
 
 
 class ComponentAnalysis(ABC):
-    def __init__(self, n_components: int | None = None):
-        self.n_components: int | None = None
+    n_components: Optional[int]
 
     @abstractmethod
     def decompose(self, data: np.ndarray) -> np.ndarray:
@@ -147,20 +149,25 @@ class ComponentAnalysis(ABC):
 
 class PCAAnalysis(ComponentAnalysis):
     def __init__(
-        self, n_components: int | None = None, variance_threshold: float = 0.8
+        self,
+        n_components: Optional[int] = None,
+        variance_threshold: Optional[float] = None,
     ):
-        super().__init__(n_components)
-        self.model: PCA = (
-            PCA(n_components=n_components, random_state=0)
-            if n_components is not None
-            else PCA(random_state=0)
+        self.n_components = n_components
+        self.model: PCA = PCA(
+            n_components=(
+                n_components if variance_threshold is None else variance_threshold
+            ),
+            random_state=0,
         )
-        self.n_components: int | None = n_components
-        self.variance_threshold = variance_threshold
+
+        self.n_components: Optional[int] = n_components
+        self.variance_threshold: Optional[float] = variance_threshold
 
     def decompose(self, data: np.ndarray) -> np.ndarray:
         print("Applying PCA")
         self.components = self.model.fit_transform(data)
+        print(f"PCA shape {self.components.shape}")
 
         if isinstance(self.components, np.ndarray):
             self.n_components = self.components.shape[1]
@@ -236,14 +243,11 @@ class PCAAnalysis(ComponentAnalysis):
 
 
 class ICAAnalysis(ComponentAnalysis):
-    def __init__(self, n_components: int | None = None, max_iter: int = 1000):
-        super().__init__(n_components)
-        self.model: FastICA = (
-            FastICA(n_components=n_components, random_state=0, max_iter=max_iter)
-            if n_components is not None
-            else FastICA(random_state=0, max_iter=max_iter)
+    def __init__(self, n_components: Optional[int] = None, max_iter: int = 1000):
+        self.n_components: Optional[int] = n_components
+        self.model: FastICA = FastICA(
+            n_components=n_components, random_state=0, max_iter=max_iter
         )
-        self.n_components: int | None = n_components
 
     def decompose(self, data: np.ndarray) -> np.ndarray:
         print("Applying ICA")
@@ -307,6 +311,7 @@ class Preprocessor(ABC):
         pass
 
 
+# TODO comprovar si funciona amb video no flat
 class MeanFramesSelector(Preprocessor):
     def __init__(self, batch_size: int = 3):
         self.batch_size = batch_size
@@ -361,6 +366,35 @@ class MeanFramesSelector(Preprocessor):
                 full_video[i] = original_data[i]
 
         return full_video
+
+
+## Not in use
+class GaussianMean(Preprocessor):
+    def __init__(self, sigma: float = 1):
+        self.sigma = sigma
+
+    def process(self, data: np.ndarray) -> np.ndarray:
+        return gaussian_filter(data, sigma=self.sigma, axes=(1, 2))
+
+    def reverse_process(
+        self, data: np.ndarray, original_data: np.ndarray
+    ) -> np.ndarray:
+        return data
+
+
+## Not in use since it flattens everyting by default.
+class Flatten(Preprocessor):
+    def __init__(self):
+        pass
+
+    def process(self, data: np.ndarray) -> np.ndarray:
+        self.original_shape = data.shape
+        return data.reshape(len(data), -1)
+
+    def reverse_process(
+        self, data: np.ndarray, original_data: np.ndarray
+    ) -> np.ndarray:
+        return data.reshape(self.original_shape)
 
 
 class VideoProcessor:
@@ -616,16 +650,24 @@ def filter_video_ica_black_lines_interactively(
 
 video = VideoProcessor(
     "0.avi",
-    [MeanFramesSelector()],
-    [PCAAnalysis(3), ICAAnalysis()],
+    [],
+    [PCAAnalysis()],
     IndividualComponentSelectorGUI(),
 )
 video.load_video()
+video.flat_frames = gaussian_filter(
+    video.flat_frames.reshape(-1, *video.frame_shape), 1
+).reshape(video.flat_frames.shape)
 
-video.decompose_video()
+video.save_flat_frames_as_mp4(video.flat_frames, "output_video_gauss.mp4")
 
-selected_components = video.select_components_interactive()
+#video.decompose_video()
 
-print(selected_components)
+#if isinstance(video.analysis[0], type(PCAAnalysis())):
+#    video.analysis[0].plot_cumulative_variance()
 
-# video.save_flat_frames_as_mp4(video.compose_video(), "output_video_object.mp4")
+#selected_components = video.select_components_interactive()
+
+#print(selected_components)
+
+#video.save_flat_frames_as_mp4(video.compose_video(), "output_video_object.mp4")
