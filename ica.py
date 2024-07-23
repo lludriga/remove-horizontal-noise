@@ -639,19 +639,19 @@ def filter_video_ica_black_lines_interactively(
     )
 
 
-video = VideoData(
-    "0.avi",
-)
-video.load_video()
-
-# 0.93 de variança 122 components
-# 0.95 de variança 288 comopoents
-
-analyzer = VideoAnalyzer(
-    video, [GaussianSpatialFilter()], PCAAnalysis(None, 0.93), ICAAnalysis()
-)
-
-analyzer.decompose_video_pca_only()
+#video = VideoData(
+#    "0.avi",
+#)
+#video.load_video()
+#
+## 0.93 de variança 122 components
+## 0.95 de variança 288 comopoents
+#
+#analyzer = VideoAnalyzer(
+#    video, [GaussianSpatialFilter()], PCAAnalysis(None, 0.93), ICAAnalysis()
+#)
+#
+#analyzer.decompose_video_pca_only()
 
 
 # video.decompose_video()
