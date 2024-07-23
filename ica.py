@@ -12,7 +12,6 @@ import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from scipy.ndimage import gaussian_filter  # type: ignore
 from sklearn.decomposition import PCA, FastICA  # type: ignore
-from TensorPCA.hyptest import dist  # type: ignore
 from TensorPCA.tensorpca import TensorPCA  # type: ignore
 
 
@@ -577,28 +576,16 @@ class VideoAnalyzer:
         return selected_components
 
 
-# Helper function
 def save_frame_as_image(frame: np.ndarray, filename: str) -> None:
     """Save a single frame as an image file."""
     cv2.imwrite(f"intermediate_frames/{filename}", frame)
 
 
-# Helper function
-def variance_flat_image_from_flat_frames(
-    flat_frames: np.ndarray,
-) -> np.ndarray:
-    """Create an image whose pixels represent each pixel variance through the video, normalized."""
-    flat_image = np.var(flat_frames, axis=0)
-    flat_image = (flat_image / np.max(flat_image)) * 255
-    return flat_image
-
-
-# Helper function
 def variance_image_from_frames(
-    flat_frames: np.ndarray,
+    frames: np.ndarray,
 ) -> np.ndarray:
     """Create an image whose pixels represent each pixel variance through the video, normalized."""
-    image = np.var(flat_frames, axis=0)
+    image = np.var(frames, axis=0)
     image = (image / np.max(image)) * 255
     return image
 
@@ -611,29 +598,7 @@ def reverse_flatten(data: np.ndarray, frame_shape: tuple[int, int]) -> np.ndarra
     return data.reshape(-1, *frame_shape)
 
 
-def select_ica_components_interactive(n_components: int) -> List[bool]:
-    """Use a GUI to select which ICA components to include."""
-    root = tk.Tk()
-    root.title("Select ICA Components")
-
-    selected_components = [tk.BooleanVar() for _ in range(n_components)]
-
-    def on_submit():
-        root.quit()
-
-    for i in range(n_components):
-        ttk.Checkbutton(
-            root, text=f"Component {i+1}", variable=selected_components[i]
-        ).pack(anchor="w")
-
-    submit_button = ttk.Button(root, text="Submit", command=on_submit)
-    submit_button.pack(anchor="s")
-
-    root.mainloop()
-    return [var.get() for var in selected_components]
-
-
-def filter_video_ica_black_lines_interactively(
+def main(
     video_path: str,
     n_components: Optional[int] = None,
     variance_threshold: Optional[float] = 0.93,
@@ -641,15 +606,15 @@ def filter_video_ica_black_lines_interactively(
 ) -> None:
     """Full pipeline for filtering a video from its ICA components and saving it."""
     # Initialize VideoProcessor with preprocessors and analysis methods
-    video_data = VideoData(
+    video = VideoData(
         video_path,
     )
 
     # Load video
-    video_data.load_video()
+    video.load_video()
 
     analyzer = VideoAnalyzer(
-        video_data,
+        video,
         [GaussianSpatialFilter()],
         PCAAnalysis(n_components, variance_threshold),
         ICAAnalysis(),
@@ -661,7 +626,7 @@ def filter_video_ica_black_lines_interactively(
     # Select ICA components
     selected_components = analyzer.select_components()
     video.save_frames_as_mp4(
-        analyzer.compose_video(selected_components=selected_components), "selected.mp4"
+        analyzer.compose_video(selected_components=selected_components), output_path
     )
 
     non_selected_components = [not selected for selected in selected_components]
@@ -671,28 +636,7 @@ def filter_video_ica_black_lines_interactively(
     )
 
 
-#video = VideoData(
-#    "0.avi",
-#)
-#video.load_video()
-#
-## 0.93 de variança 122 components
-## 0.95 de variança 288 comopoents
-#
-#analyzer = VideoAnalyzer(
-#    video, [GaussianSpatialFilter()], PCAAnalysis(None, 0.93), ICAAnalysis()
-#)
-#
-#analyzer.decompose_video_pca_only()
-
-
-# video.decompose_video()
-
-# if isinstance(video.analysis[0], type(PCAAnalysis())):
-#    video.analysis[0].plot_cumulative_variance()
-
-# selected_components = video.select_components_interactive()
-
-# print(selected_components)
-
-# video.save_flat_frames_as_mp4(video.compose_video(), "output_video_object.mp4")
+if __name__ == "__main__":
+    # 0.93 de variança 122 components
+    # 0.95 de variança 288 comopoents
+    main("0.avi", None, 0.93, "denoised.mp4")
