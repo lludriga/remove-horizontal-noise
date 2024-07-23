@@ -10,16 +10,14 @@ import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from scipy.ndimage import gaussian_filter
+from scipy.ndimage import gaussian_filter  # type: ignore
 from sklearn.decomposition import PCA, FastICA  # type: ignore
 
 
 # Define the abstract base class for Component Selector
 class ComponentSelector(ABC):
     @abstractmethod
-    def select_components(
-        self, component_images: np.ndarray, frame_shape: tuple[int, int]
-    ) -> List[bool]:
+    def select_components(self, component_images: np.ndarray) -> List[bool]:
         pass
 
 
@@ -27,16 +25,13 @@ class IndividualComponentSelectorGUI(ComponentSelector):
     def __init__(self):
         self.selected_components = []
 
-    def select_components(
-        self, component_images: np.ndarray, frame_shape: tuple[int, int]
-    ) -> List[bool]:
+    def select_components(self, component_images: np.ndarray) -> List[bool]:
         self.root = tk.Tk()
         self.root.title("ICA Component Selector")
 
         self.components = component_images
-        self.frame_shape = frame_shape
         self.selected_components = [
-            tk.BooleanVar(value=True) for _ in range(self.components.shape[1])
+            tk.BooleanVar(value=True) for _ in range(self.components.shape[0])
         ]
 
         self.canvas_frame = ttk.Frame(self.root)
@@ -79,9 +74,7 @@ class IndividualComponentSelectorGUI(ComponentSelector):
             self.canvas.get_tk_widget().destroy()
 
         fig, ax = plt.subplots()
-        component_image = self.components[:, self.component_index].reshape(
-            self.frame_shape
-        )
+        component_image = self.components[self.component_index]
         ax.imshow(component_image, cmap="gray")
         ax.set_title(f"Component {self.component_index + 1}")
 
@@ -103,7 +96,7 @@ class IndividualComponentSelectorGUI(ComponentSelector):
         self.next_button.config(
             state=(
                 tk.NORMAL
-                if self.component_index < self.components.shape[1] - 1
+                if self.component_index < self.components.shape[0] - 1
                 else tk.DISABLED
             )
         )
@@ -171,7 +164,7 @@ class PCAAnalysis(ComponentAnalysis):
 
         if isinstance(self.components, np.ndarray):
             self.n_components = self.components.shape[1]
-            print("Finished PCA")
+            print(f"Finished PCA, {self.n_components} components extracted.")
             return self.components
         else:
             raise Exception("Failed decomposing to an array")
@@ -299,25 +292,24 @@ class ICAAnalysis(ComponentAnalysis):
         return video
 
 
+# Preprocessors operate on non-flat data
 class Preprocessor(ABC):
     @abstractmethod
     def process(self, data: np.ndarray) -> np.ndarray:
         pass
 
     @abstractmethod
-    def reverse_process(
-        self, data: np.ndarray, original_data: np.ndarray
-    ) -> np.ndarray:
+    def reverse_process(self, data: np.ndarray) -> np.ndarray:
         pass
 
 
-# TODO comprovar si funciona amb video no flat
 class MeanFramesSelector(Preprocessor):
     def __init__(self, batch_size: int = 3):
         self.batch_size = batch_size
         self.selected_frames: List[bool] = []
+        self.original_not_used_frames: np.ndarray
 
-    def process(self, flat_frames: np.ndarray) -> np.ndarray:
+    def process(self, frames: np.ndarray) -> np.ndarray:
         """
         Analyze the frames statistically to try to remove the ones without noise.
 
@@ -328,14 +320,15 @@ class MeanFramesSelector(Preprocessor):
         supposedly. We choose 2 out of 3 every time, since the noise doesn't happen (apparently)
         3 frames.
         """
-        n_frames = flat_frames.shape[0]
-        remaining_frames = flat_frames.shape[0] % self.batch_size
+        print("Selecting possible noisy frames from the brightness mean.")
+        n_frames = frames.shape[0]
+        remaining_frames = frames.shape[0] % self.batch_size
         self.selected_frames = []
 
         for i in range(n_frames // self.batch_size):
             batch_mean = np.array(
                 [
-                    np.mean(flat_frames[i * self.batch_size + j])
+                    np.mean(frames[i * self.batch_size + j])
                     for j in range(self.batch_size)
                 ]
             )
@@ -348,71 +341,55 @@ class MeanFramesSelector(Preprocessor):
         # we do the easy thing and just include it all
         self.selected_frames.extend([True] * remaining_frames)
 
-        return flat_frames[self.selected_frames]
+        self.original_not_used_frames = frames[
+            [not selected for selected in self.selected_frames]
+        ]
 
-    def reverse_process(
-        self, data: np.ndarray, original_data: np.ndarray
-    ) -> np.ndarray:
+        print(
+            f"Finished selection. Selected {sum(map(lambda x: 1 if x else 0, self.selected_frames))} frames"
+        )
+        return frames[self.selected_frames]
+
+    def reverse_process(self, data: np.ndarray) -> np.ndarray:
         """Reconstruct the full video including non-noisy frames in their correct order."""
-        full_video = np.zeros_like(original_data)
+        print("Joining the selected frames with the original non-processed frames.")
+        full_video = np.zeros((len(self.selected_frames), data.shape[1], data.shape[2]))
 
         # Insert reconstructed frames into the full video array
         j = 0
+        k = 0
         for i in range(len(self.selected_frames)):
             if self.selected_frames[i]:
                 full_video[i] = data[j]
                 j += 1
             else:
-                full_video[i] = original_data[i]
+                full_video[i] = self.original_not_used_frames[k]
+                k += 1
 
         return full_video
 
 
-## Not in use
-class GaussianMean(Preprocessor):
+class GaussianSpatialFilter(Preprocessor):
     def __init__(self, sigma: float = 1):
         self.sigma = sigma
 
     def process(self, data: np.ndarray) -> np.ndarray:
+        print("Applying the spatial gaussian mean filter to each frame.")
         return gaussian_filter(data, sigma=self.sigma, axes=(1, 2))
 
-    def reverse_process(
-        self, data: np.ndarray, original_data: np.ndarray
-    ) -> np.ndarray:
+    def reverse_process(self, data: np.ndarray) -> np.ndarray:
         return data
 
 
-## Not in use since it flattens everyting by default.
-class Flatten(Preprocessor):
-    def __init__(self):
-        pass
-
-    def process(self, data: np.ndarray) -> np.ndarray:
-        self.original_shape = data.shape
-        return data.reshape(len(data), -1)
-
-    def reverse_process(
-        self, data: np.ndarray, original_data: np.ndarray
-    ) -> np.ndarray:
-        return data.reshape(self.original_shape)
-
-
-class VideoProcessor:
+class VideoData:
     def __init__(
         self,
         video_path: str,
-        preprocessors: list[Preprocessor],
-        analysis: list[ComponentAnalysis],
-        selector: ComponentSelector,
     ):
         self.video_path = video_path
-        self.flat_frames: np.ndarray
+        self.frames: np.ndarray
         self.frame_shape: tuple[int, int]
         self.fps: int
-
-        self.preprocessors: list[Preprocessor] = preprocessors
-        self.analysis: list[ComponentAnalysis] = analysis
-        self.selector = selector
 
     def load_video(self) -> np.ndarray:
         """Load the video and return a flattened grayscale version."""
@@ -426,7 +403,7 @@ class VideoProcessor:
             if not ret:
                 break
             frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            frames.append(frame_gray.flatten())
+            frames.append(frame_gray)
 
             # Save a few original frames
             if frame_count < 5:
@@ -441,7 +418,7 @@ class VideoProcessor:
         cap.release()
 
         if isinstance(frame_shape, tuple) and len(frame_shape) == 2:
-            self.flat_frames = np.array(frames)
+            self.frames = np.array(frames)
             self.frame_shape = frame_shape
             self.fps = fps
             return np.array(frames)
@@ -455,7 +432,14 @@ class VideoProcessor:
     ) -> None:
         """Normalize and save array flattened of frames as a video file."""
         frames: np.ndarray = flat_frames.reshape(-1, *self.frame_shape)
+        self.save_frames_as_mp4(frames, output_path)
 
+    def save_frames_as_mp4(
+        self,
+        frames: np.ndarray,
+        output_path: str = "output_video.mp4",
+    ) -> None:
+        """Normalize and save array flattened of frames as a video file."""
         if np.ndim(frames) == 3:
             frames = cv2.normalize(frames, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)  # type: ignore
         else:
@@ -476,28 +460,34 @@ class VideoProcessor:
         out.release()
         print(f"Video saved as {output_path}")
 
-    def variance_flat_image_from_flat_frames(
+
+class VideoAnalyzer:
+    def __init__(
         self,
-        flat_frames: np.ndarray,
-    ) -> np.ndarray:
-        """Create an image whose pixels represent each pixel variance through the video, normalized."""
-        flat_image = np.var(flat_frames, axis=0)
-        flat_image = (flat_image / np.max(flat_image)) * 255
-        return flat_image
+        video_data: VideoData,
+        preprocessors: List[Preprocessor],
+        pca: PCAAnalysis,
+        ica: ICAAnalysis,
+        selector: ComponentSelector = IndividualComponentSelectorGUI(),
+    ):
+        self.video_data = video_data
+        self.preprocessors = preprocessors
+        self.pca = pca
+        self.ica = ica
+        self.selector = selector
 
     def variance_images_array(self) -> np.ndarray:
-        last_analysis = self.analysis[-1]
-        if last_analysis.n_components is None:
-            raise Exception("Run the analysis before plotting it.")
-        array = np.zeros((self.flat_frames.shape[1], last_analysis.n_components))
-        for i in range(last_analysis.n_components):
-            array[:, i] = self.variance_flat_image_from_flat_frames(
-                self.compose_nth_component(i)
+        if self.ica.n_components is None:
+            raise Exception(
+                "Run the component analysis before operating or composing on it."
             )
+        array = np.zeros((self.ica.n_components, *self.video_data.frame_shape))
+        for i in range(self.ica.n_components):
+            array[i] = variance_image_from_frames(self.compose_nth_component_video(i))
         return array
 
     def preprocess_video(self) -> np.ndarray:
-        data = self.flat_frames
+        data = self.video_data.frames
         if self.preprocessors:
             for preprocessor in self.preprocessors:
                 data = preprocessor.process(data)
@@ -506,53 +496,50 @@ class VideoProcessor:
     def reverse_preprocess_video(self, data) -> np.ndarray:
         if self.preprocessors:
             for preprocessor in reversed(self.preprocessors):
-                data = preprocessor.reverse_process(data, self.flat_frames)
+                data = preprocessor.reverse_process(data)
         return data
 
     def decompose_video(self):
-        if not self.analysis:
-            raise Exception("Please add the component analysis you want to make.")
         data = self.preprocess_video()
-        for analysis in self.analysis:
-            data = analysis.decompose(data)
+        data = flatten(data)
+        data = self.pca.decompose(data)
+        data = self.ica.decompose(data)
+
+    def decompose_video_pca_only(self):
+        data = self.preprocess_video()
+        data = flatten(data)
+        data = self.pca.decompose(data)
 
     def compose_video(self, selected_components: list[bool] = []) -> np.ndarray:
-        if not self.analysis:
-            raise Exception("Please add the component analysis you want to make.")
-        data = self.analysis[-1].compose(selected_components=selected_components)
-        for analysis in reversed(self.analysis[:-1]):
-            data = analysis.compose(data)
+        data = self.ica.compose(selected_components=selected_components)
+        data = self.pca.compose(data)
+        data = reverse_flatten(data, self.video_data.frame_shape)
         data = self.reverse_preprocess_video(data)
         return data
 
-    def compose_nth_component(
+    def compose_nth_component_video(
         self, component: int, reverse_preprocessing: bool = False
     ) -> np.ndarray:
-        if not self.analysis:
-            raise Exception("Please add the component analysis you want to make.")
-        data = self.analysis[-1].compose_nth_component(component)
-        for analysis in reversed(self.analysis[:-1]):
-            data = analysis.compose(data)
+        data = self.ica.compose_nth_component(component)
+        data = self.pca.compose(data)
+        data = reverse_flatten(data, self.video_data.frame_shape)
         if reverse_preprocessing:
             data = self.reverse_preprocess_video(data)
         return data
 
     def save_components_videos(self) -> None:
-        last_analysis = self.analysis[-1]
-        if last_analysis.n_components is None:
+        if self.ica.n_components is None:
             raise Exception(
                 "Please decompose the video before trying to compose it again."
             )
-        for i in range(last_analysis.n_components):
-            self.save_flat_frames_as_mp4(
-                self.compose_nth_component(i), f"component_{i}.mp4"
+        for i in range(self.ica.n_components):
+            self.video_data.save_frames_as_mp4(
+                self.compose_nth_component_video(i), f"component_{i}.mp4"
             )
 
-    def select_components_interactive(self) -> List[bool]:
-        if not self.analysis:
-            raise Exception("Please add an analysis method.")
+    def select_components(self) -> List[bool]:
         selected_components = self.selector.select_components(
-            self.variance_images_array(), self.frame_shape
+            self.variance_images_array()
         )
         return selected_components
 
@@ -564,32 +551,31 @@ def save_frame_as_image(frame: np.ndarray, filename: str) -> None:
 
 
 # Helper function
-def load_not_flat_video(video_path: str) -> np.ndarray:
-    """Load the video and return a not flat grayscale version."""
-    cap = cv2.VideoCapture(video_path)
-    frames = []
-    frame_shape = None
+def variance_flat_image_from_flat_frames(
+    flat_frames: np.ndarray,
+) -> np.ndarray:
+    """Create an image whose pixels represent each pixel variance through the video, normalized."""
+    flat_image = np.var(flat_frames, axis=0)
+    flat_image = (flat_image / np.max(flat_image)) * 255
+    return flat_image
 
-    frame_count = 0
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
-        frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        frames.append(frame_gray)
 
-        # Save a few original frames
-        if frame_count < 5:
-            save_frame_as_image(frame_gray, f"original_frame_{frame_count}.png")
+# Helper function
+def variance_image_from_frames(
+    flat_frames: np.ndarray,
+) -> np.ndarray:
+    """Create an image whose pixels represent each pixel variance through the video, normalized."""
+    image = np.var(flat_frames, axis=0)
+    image = (image / np.max(image)) * 255
+    return image
 
-        if frame_shape is None:
-            frame_shape = frame_gray.shape
 
-        frame_count += 1
+def flatten(data: np.ndarray) -> np.ndarray:
+    return data.reshape(len(data), -1)
 
-    cap.release()
 
-    return np.array(frames)
+def reverse_flatten(data: np.ndarray, frame_shape: tuple[int, int]) -> np.ndarray:
+    return data.reshape(-1, *frame_shape)
 
 
 def select_ica_components_interactive(n_components: int) -> List[bool]:
@@ -614,60 +600,67 @@ def select_ica_components_interactive(n_components: int) -> List[bool]:
     return [var.get() for var in selected_components]
 
 
-# TODO Choose pca components based on covariance (at least 80%)
 def filter_video_ica_black_lines_interactively(
     video_path: str,
-    n_components: int,
-    variance_threshold: float,
+    n_components: Optional[int] = None,
+    variance_threshold: Optional[float] = 0.93,
     output_path: str = "output_video.mp4",
 ) -> None:
     """Full pipeline for filtering a video from its ICA components and saving it."""
     # Initialize VideoProcessor with preprocessors and analysis methods
-    video_processor = VideoProcessor(
+    video_data = VideoData(
         video_path,
-        preprocessors=[MeanFramesSelector()],
-        analysis=[
-            PCAAnalysis(
-                n_components=n_components, variance_threshold=variance_threshold
-            ),
-            ICAAnalysis(),
-        ],
-        selector=IndividualComponentSelectorGUI(),
     )
 
     # Load video
-    video_processor.load_video()
+    video_data.load_video()
+
+    analyzer = VideoAnalyzer(
+        video_data,
+        [GaussianSpatialFilter()],
+        PCAAnalysis(n_components, variance_threshold),
+        ICAAnalysis(),
+    )
 
     # Decompose video
-    video_processor.decompose_video()
+    analyzer.decompose_video()
 
-    # Reconstruct the selected frames with the selected ICA components
-    reconstructed_selected_frames = video_processor.compose_video()
+    # Select ICA components
+    selected_components = analyzer.select_components()
+    video.save_frames_as_mp4(
+        analyzer.compose_video(selected_components=selected_components),
+        "selected.mp4"
+    )
 
-    # Save the full reconstructed video
-    video_processor.save_flat_frames_as_mp4(reconstructed_selected_frames, output_path)
+    non_selected_components = [not selected for selected in selected_components]
+    video.save_frames_as_mp4(
+        analyzer.compose_video(selected_components=non_selected_components),
+        "non_selected.mp4",
+    )
 
 
-video = VideoProcessor(
+video = VideoData(
     "0.avi",
-    [],
-    [PCAAnalysis()],
-    IndividualComponentSelectorGUI(),
 )
 video.load_video()
-video.flat_frames = gaussian_filter(
-    video.flat_frames.reshape(-1, *video.frame_shape), 1
-).reshape(video.flat_frames.shape)
 
-video.save_flat_frames_as_mp4(video.flat_frames, "output_video_gauss.mp4")
+# 0.93 de variança 122 components
+# 0.95 de variança 288 comopoents
 
-#video.decompose_video()
+analyzer = VideoAnalyzer(
+    video, [GaussianSpatialFilter()], PCAAnalysis(None, 0.93), ICAAnalysis()
+)
 
-#if isinstance(video.analysis[0], type(PCAAnalysis())):
+analyzer.decompose_video_pca_only()
+
+
+# video.decompose_video()
+
+# if isinstance(video.analysis[0], type(PCAAnalysis())):
 #    video.analysis[0].plot_cumulative_variance()
 
-#selected_components = video.select_components_interactive()
+# selected_components = video.select_components_interactive()
 
-#print(selected_components)
+# print(selected_components)
 
-#video.save_flat_frames_as_mp4(video.compose_video(), "output_video_object.mp4")
+# video.save_flat_frames_as_mp4(video.compose_video(), "output_video_object.mp4")
