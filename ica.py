@@ -12,6 +12,8 @@ import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from scipy.ndimage import gaussian_filter  # type: ignore
 from sklearn.decomposition import PCA, FastICA  # type: ignore
+from TensorPCA.hyptest import dist  # type: ignore
+from TensorPCA.tensorpca import TensorPCA  # type: ignore
 
 
 # Define the abstract base class for Component Selector
@@ -290,6 +292,37 @@ class ICAAnalysis(ComponentAnalysis):
         selected_components[component] = True
         video = self.compose(selected_components=selected_components)
         return video
+
+
+# No esta acabada de implementar ja que no acaba la funcio en un temps normal (mes d'1 hora)
+class TPCAAnalysis(ComponentAnalysis):
+    def __init__(self, n_components: Optional[int]):
+        self.n_components: Optional[int] = n_components
+        self.model: TensorPCA
+        self.s: np.ndarray
+        self.m: np.ndarray
+
+    def decompose(self, data: np.ndarray) -> np.ndarray:
+        self.model = TensorPCA(data)
+        if self.n_components is None:
+            raise Exception("No number of components specified.")
+        s_hat, M_hat = self.model.t_pca(
+            self.n_components
+        )  # to estimate a 2-factor model
+        self.s = s_hat
+        self.m = M_hat
+        return self.m
+
+    # Fa falta entendre com fer la reconstruccio i que son realment les components
+    @abstractmethod
+    def compose(
+        self, components: np.ndarray | None = None, selected_components: List[bool] = []
+    ) -> np.ndarray:
+        pass
+
+    @abstractmethod
+    def compose_nth_component(self, component: int) -> np.ndarray:
+        pass
 
 
 # Preprocessors operate on non-flat data
@@ -628,8 +661,7 @@ def filter_video_ica_black_lines_interactively(
     # Select ICA components
     selected_components = analyzer.select_components()
     video.save_frames_as_mp4(
-        analyzer.compose_video(selected_components=selected_components),
-        "selected.mp4"
+        analyzer.compose_video(selected_components=selected_components), "selected.mp4"
     )
 
     non_selected_components = [not selected for selected in selected_components]
