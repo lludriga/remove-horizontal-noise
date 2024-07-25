@@ -18,11 +18,12 @@ class ComponentSelector(ABC):
     """Abstract base class for selecting components from ICA/PCA analysis."""
 
     @abstractmethod
-    def select_components(self, component_images: np.ndarray) -> List[bool]:
+    def select_components(self, component_images: np.ndarray, cmap: str) -> List[bool]:
         """Select components from the provided component images.
 
         Args:
             component_images (np.ndarray): Array of component images.
+            cmap (str): String representing a matplot colormap for displaying the images.
 
         Returns:
             List[bool]: List indicating which components are selected.
@@ -37,7 +38,7 @@ class IndividualComponentSelectorGUI(ComponentSelector):
         """Initialize the component selector GUI."""
         self.selected_components = []
 
-    def select_components(self, component_images: np.ndarray) -> List[bool]:
+    def select_components(self, component_images: np.ndarray, cmap: str) -> List[bool]:
         """Launch the GUI to select components from the provided images.
 
         Args:
@@ -50,6 +51,7 @@ class IndividualComponentSelectorGUI(ComponentSelector):
         self.root = tk.Tk()
         self.root.title("ICA Component Selector")
 
+        self.cmap = cmap
         self.components = component_images
         self.selected_components = [
             tk.BooleanVar(value=True) for _ in range(self.components.shape[0])
@@ -97,7 +99,7 @@ class IndividualComponentSelectorGUI(ComponentSelector):
 
         fig, ax = plt.subplots()
         component_image = self.components[self.component_index]
-        ax.imshow(component_image, cmap="gray")
+        ax.imshow(component_image, cmap=self.cmap)
         ax.set_title(f"Component {self.component_index + 1}")
 
         self.canvas = FigureCanvasTkAgg(fig, master=self.canvas_frame)
@@ -709,7 +711,7 @@ class VideoAnalyzer:
         self.ica = ica
         self.selector = selector
 
-    def variance_images_array(self) -> np.ndarray:
+    def get_variance_images(self) -> np.ndarray:
         """Generate an array of variance images for each component.
 
         Returns:
@@ -818,15 +820,15 @@ class VideoAnalyzer:
                 self.compose_nth_component_video(i), f"component_{i}.mp4"
             )
 
-    def select_components(self) -> List[bool]:
-        """Select components using the variance images array and the selector.
+    def select_components_from_images(
+        self, images: np.ndarray, cmap: str = "bwr"
+    ) -> List[bool]:
+        """Select components using the images array and the selector.
 
         Returns:
             List[bool]: List of booleans indicating selected components.
         """
-        selected_components = self.selector.select_components(
-            self.variance_images_array()
-        )
+        selected_components = self.selector.select_components(images, cmap)
         return selected_components
 
     def choose_n_pca_components_interactive(self) -> None:
@@ -845,6 +847,34 @@ class VideoAnalyzer:
             chosen = ask_y_or_n()
 
         self.pca = PCAAnalysis(n_components)
+
+    def get_component_maps(self) -> np.ndarray:
+        """Compute component maps to visualize how each component affects each pixel.
+
+        Args:
+            n_components (int): Number of components to compute.
+
+        Returns:
+            np.ndarray: Array of shape (n_components, 2, frame_height, frame_width) containing component maps.
+                        The first index corresponds to the component number, the second index to PCA (0) or ICA (1).
+        """
+        n_components = self.pca.n_components
+        if n_components is None:
+            raise ValueError("Decomposition has not been run yet.")
+
+        pca_components = self.pca.model.components_[:n_components]
+        ica_components = self.ica.model.components_[:n_components]
+
+        frame_shape = self.video_data.frame_shape
+        component_maps = np.zeros((n_components, *self.video_data.frame_shape))
+
+        for i in range(n_components):
+            # Calculate ICA component in the original frame space
+            ica_component = np.matmul(pca_components.T, ica_components[i, :]).reshape(
+                frame_shape
+            )
+            component_maps[i] = ica_component
+        return component_maps
 
 
 def save_frame_as_image(frame: np.ndarray, filename: str) -> None:
@@ -927,7 +957,10 @@ def main(
     analyzer.decompose_video()
 
     # Select ICA components
-    selected_components = analyzer.select_components()
+    # Two options: component maps and variance images (more expensive)
+    selected_components = analyzer.select_components_from_images(
+        analyzer.get_component_maps()
+    )
     video.save_frames_as_mp4(
         analyzer.compose_video(selected_components=selected_components), output_path
     )
