@@ -132,7 +132,9 @@ class ComponentAnalysis(ABC):
 
     @abstractmethod
     def compose(
-        self, components: np.ndarray | None = None, selected_components: List[bool] = []
+        self,
+        components: np.ndarray | None = None,
+        selected_components: Optional[list[bool]] = None,
     ) -> np.ndarray:
         pass
 
@@ -171,16 +173,18 @@ class PCAAnalysis(ComponentAnalysis):
             raise Exception("Failed decomposing to an array")
 
     def compose(
-        self, components: np.ndarray | None = None, selected_components: List[bool] = []
+        self,
+        components: np.ndarray | None = None,
+        selected_components: Optional[list[bool]] = None,
     ) -> np.ndarray:
         if self.components is None or self.n_components is None:
-            raise Exception(
+            raise ValueError(
                 "Before recomposing the PCA components you have to run decompose."
             )
-        if not selected_components:
+        if selected_components is None:
             selected_components = [True for i in range(self.n_components)]
         if len(selected_components) != self.n_components:
-            raise Exception("Incorrect length of list of selected components.")
+            raise ValueError("Incorrect length of list of selected components.")
 
         if components is None:
             components = self.components
@@ -227,7 +231,7 @@ class PCAAnalysis(ComponentAnalysis):
 
     def compose_nth_component(self, component: int) -> np.ndarray:
         if self.n_components is None:
-            raise Exception(
+            raise ValueError(
                 "Decompose first the data in it's components to be able to compose them."
             )
         selected_components = [False for i in range(self.n_components)]
@@ -255,16 +259,18 @@ class ICAAnalysis(ComponentAnalysis):
             raise Exception("Failed decomposing to an array")
 
     def compose(
-        self, components: np.ndarray | None = None, selected_components: List[bool] = []
+        self,
+        components: Optional[np.ndarray] = None,
+        selected_components: Optional[list[bool]] = None,
     ) -> np.ndarray:
         if self.components is None or self.n_components is None:
-            raise Exception(
+            raise ValueError(
                 "Before recomposing the ICA components you have to run decompose."
             )
-        if not selected_components:
+        if selected_components is None:
             selected_components = [True for i in range(self.n_components)]
         if len(selected_components) != self.n_components:
-            raise Exception("Incorrect length of list of selected components.")
+            raise ValueError("Incorrect length of list of selected components.")
 
         if components is None:
             components = self.components
@@ -284,44 +290,13 @@ class ICAAnalysis(ComponentAnalysis):
 
     def compose_nth_component(self, component: int) -> np.ndarray:
         if self.n_components is None:
-            raise Exception(
+            raise ValueError(
                 "Decompose first the data in it's components to be able to compose them."
             )
         selected_components = [False for i in range(self.n_components)]
         selected_components[component] = True
         video = self.compose(selected_components=selected_components)
         return video
-
-
-# No esta acabada de implementar ja que no acaba la funcio en un temps normal (mes d'1 hora)
-class TPCAAnalysis(ComponentAnalysis):
-    def __init__(self, n_components: Optional[int]):
-        self.n_components: Optional[int] = n_components
-        self.model: TensorPCA
-        self.s: np.ndarray
-        self.m: np.ndarray
-
-    def decompose(self, data: np.ndarray) -> np.ndarray:
-        self.model = TensorPCA(data)
-        if self.n_components is None:
-            raise Exception("No number of components specified.")
-        s_hat, M_hat = self.model.t_pca(
-            self.n_components
-        )  # to estimate a 2-factor model
-        self.s = s_hat
-        self.m = M_hat
-        return self.m
-
-    # Fa falta entendre com fer la reconstruccio i que son realment les components
-    @abstractmethod
-    def compose(
-        self, components: np.ndarray | None = None, selected_components: List[bool] = []
-    ) -> np.ndarray:
-        pass
-
-    @abstractmethod
-    def compose_nth_component(self, component: int) -> np.ndarray:
-        pass
 
 
 # Preprocessors operate on non-flat data
@@ -455,7 +430,7 @@ class VideoData:
             self.fps = fps
             return np.array(frames)
         else:
-            raise Exception("Error getting the frame shape. Incorrect dimensions")
+            raise ValueError("Error getting the frame shape. Incorrect dimensions")
 
     def save_flat_frames_as_mp4(
         self,
@@ -510,7 +485,7 @@ class VideoAnalyzer:
 
     def variance_images_array(self) -> np.ndarray:
         if self.ica.n_components is None:
-            raise Exception(
+            raise ValueError(
                 "Run the component analysis before operating or composing on it."
             )
         array = np.zeros((self.ica.n_components, *self.video_data.frame_shape))
@@ -542,7 +517,9 @@ class VideoAnalyzer:
         data = flatten(data)
         data = self.pca.decompose(data)
 
-    def compose_video(self, selected_components: list[bool] = []) -> np.ndarray:
+    def compose_video(
+        self, selected_components: Optional[list[bool]] = None
+    ) -> np.ndarray:
         data = self.ica.compose(selected_components=selected_components)
         data = self.pca.compose(data)
         data = reverse_flatten(data, self.video_data.frame_shape)
@@ -561,7 +538,7 @@ class VideoAnalyzer:
 
     def save_components_videos(self) -> None:
         if self.ica.n_components is None:
-            raise Exception(
+            raise ValueError(
                 "Please decompose the video before trying to compose it again."
             )
         for i in range(self.ica.n_components):
@@ -578,6 +555,7 @@ class VideoAnalyzer:
 
 def save_frame_as_image(frame: np.ndarray, filename: str) -> None:
     """Save a single frame as an image file."""
+    os.makedirs("intermediate_frames/", exist_ok=True)
     cv2.imwrite(f"intermediate_frames/{filename}", frame)
 
 
@@ -598,10 +576,34 @@ def reverse_flatten(data: np.ndarray, frame_shape: tuple[int, int]) -> np.ndarra
     return data.reshape(-1, *frame_shape)
 
 
+def ask_y_or_n() -> bool:
+    while True:
+        answer = input("Enter y or n (yes or no): ")
+        if answer == "y":
+            return True
+        elif answer == "n":
+            return False
+        else:
+            print("Please enter y or n.")
+
+
+def choose_n_pca_components_interactive(analyzer: VideoAnalyzer) -> int:
+    analyzer.decompose_video_pca_only()
+    analyzer.pca.plot_cumulative_variance()
+
+    chosen: bool = False
+    while not chosen:
+        variance_threshold = float(input("How much variance would you like to keep? "))
+        n_components = analyzer.pca.n_components_from_variance(variance_threshold)
+        print(f"That would need {n_components} number of components.")
+        print("Do you want to get that many number of components?")
+        chosen = ask_y_or_n()
+    return n_components
+
+
+# Example usage
 def main(
     video_path: str,
-    n_components: Optional[int] = None,
-    variance_threshold: Optional[float] = 0.93,
     output_path: str = "output_video.mp4",
 ) -> None:
     """Full pipeline for filtering a video from its ICA components and saving it."""
@@ -616,9 +618,13 @@ def main(
     analyzer = VideoAnalyzer(
         video,
         [GaussianSpatialFilter()],
-        PCAAnalysis(n_components, variance_threshold),
+        PCAAnalysis(),
         ICAAnalysis(),
     )
+
+    # Choose how many components to use
+    n_components = choose_n_pca_components_interactive(analyzer)
+    analyzer.pca = PCAAnalysis(n_components)
 
     # Decompose video
     analyzer.decompose_video()
@@ -639,4 +645,4 @@ def main(
 if __name__ == "__main__":
     # 0.93 de variança 122 components
     # 0.95 de variança 288 comopoents
-    main("0.avi", None, 0.93, "denoised.mp4")
+    main("0.avi")
