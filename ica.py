@@ -3,8 +3,8 @@
 import os
 import tkinter as tk
 from abc import ABC, abstractmethod
-from tkinter import messagebox, ttk
-from typing import Callable, Iterable, List, Optional
+from tkinter import ttk
+from typing import List, Optional
 
 import cv2
 import matplotlib.pyplot as plt
@@ -12,7 +12,6 @@ import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from scipy.ndimage import gaussian_filter  # type: ignore
 from sklearn.decomposition import PCA, FastICA  # type: ignore
-from TensorPCA.tensorpca import TensorPCA  # type: ignore
 
 
 class ComponentSelector(ABC):
@@ -429,33 +428,58 @@ class ICAAnalysis(ComponentAnalysis):
         return video
 
 
-# Preprocessors operate on non-flat data
 class Preprocessor(ABC):
+    """Abstract base class for preprocessors that operate on non-flat data."""
+
     @abstractmethod
     def process(self, data: np.ndarray) -> np.ndarray:
+        """Process the input data and return the processed data.
+
+        Args:
+            data (np.ndarray): Input data to be processed.
+
+        Returns:
+            np.ndarray: Processed data.
+        """
         pass
 
     @abstractmethod
     def reverse_process(self, data: np.ndarray) -> np.ndarray:
+        """Reverse the processing of the data and return the original data.
+
+        Args:
+            data (np.ndarray): Processed data to be reversed.
+
+        Returns:
+            np.ndarray: Original data.
+        """
         pass
 
 
 class MeanFramesSelector(Preprocessor):
+    """Select frames based on brightness mean to filter out non-noisy frames."""
+
     def __init__(self, batch_size: int = 3):
+        """Initialize MeanFramesSelector with a specified batch size.
+
+        Args:
+            batch_size (int, optional): Number of frames to analyze in each batch. Defaults to 3.
+        """
         self.batch_size = batch_size
         self.selected_frames: List[bool] = []
         self.original_not_used_frames: np.ndarray
 
     def process(self, frames: np.ndarray) -> np.ndarray:
-        """
-        Analyze the frames statistically to try to remove the ones without noise.
+        """Analyze and select frames with noise based on brightness mean.
 
-        We apply a statistic, the mean in these case, 3 by 3 so we ensure the background
-        image stays mostly the same, and we can detect almost surely the variation caused
-        by the black lines, making the mean lower.
-        We return a list of bools containg true in the ones chosen, the ones with noise
-        supposedly. We choose 2 out of 3 every time, since the noise doesn't happen (apparently)
-        3 frames.
+        Args:
+            frames (np.ndarray): Array of video frames.
+
+        Returns:
+            np.ndarray: Array of selected frames with noise.
+
+        Raises:
+            ValueError: If the frames array is empty.
         """
         print("Selecting possible noisy frames from the brightness mean.")
         n_frames = frames.shape[0]
@@ -488,7 +512,14 @@ class MeanFramesSelector(Preprocessor):
         return frames[self.selected_frames]
 
     def reverse_process(self, data: np.ndarray) -> np.ndarray:
-        """Reconstruct the full video including non-noisy frames in their correct order."""
+        """Reconstruct the full video including non-noisy frames in their correct order.
+
+        Args:
+            data (np.ndarray): Processed frames to be recombined with original frames.
+
+        Returns:
+            np.ndarray: Full reconstructed video.
+        """
         print("Joining the selected frames with the original non-processed frames.")
         full_video = np.zeros((len(self.selected_frames), data.shape[1], data.shape[2]))
 
@@ -507,14 +538,37 @@ class MeanFramesSelector(Preprocessor):
 
 
 class GaussianSpatialFilter(Preprocessor):
+    """Apply a Gaussian spatial filter to video frames (one-way)."""
+
     def __init__(self, sigma: float = 1):
+        """Initialize GaussianSpatialFilter with a specified sigma value.
+
+        Args:
+            sigma (float, optional): Standard deviation for the Gaussian kernel. Defaults to 1.
+        """
         self.sigma = sigma
 
     def process(self, data: np.ndarray) -> np.ndarray:
+        """Apply the spatial Gaussian filter to each frame.
+
+        Args:
+            data (np.ndarray): Array of video frames.
+
+        Returns:
+            np.ndarray: Filtered frames.
+        """
         print("Applying the spatial gaussian mean filter to each frame.")
         return gaussian_filter(data, sigma=self.sigma, axes=(1, 2))
 
     def reverse_process(self, data: np.ndarray) -> np.ndarray:
+        """Return the processed data as is (no reverse processing).
+
+        Args:
+            data (np.ndarray): Processed frames.
+
+        Returns:
+            np.ndarray: The same processed frames.
+        """
         return data
 
 
@@ -629,6 +683,8 @@ class VideoData:
 
 
 class VideoAnalyzer:
+    """Analyze video data using preprocessing, PCA, and ICA techniques."""
+
     def __init__(
         self,
         video_data: VideoData,
@@ -637,6 +693,16 @@ class VideoAnalyzer:
         ica: ICAAnalysis,
         selector: ComponentSelector = IndividualComponentSelectorGUI(),
     ):
+        """Initialize VideoAnalyzer with video data, preprocessors, PCA, ICA, and a selector.
+
+        Args:
+            video_data (VideoData): The video data to be analyzed.
+            preprocessors (List[Preprocessor]): List of preprocessors to apply to the video data.
+            pca (PCAAnalysis): PCA analysis instance for dimensionality reduction.
+            ica (ICAAnalysis): ICA analysis instance for independent component analysis.
+            selector (ComponentSelector, optional): Component selector instance.
+                                                    Defaults to IndividualComponentSelectorGUI().
+        """
         self.video_data = video_data
         self.preprocessors = preprocessors
         self.pca = pca
@@ -644,6 +710,14 @@ class VideoAnalyzer:
         self.selector = selector
 
     def variance_images_array(self) -> np.ndarray:
+        """Generate an array of variance images for each component.
+
+        Returns:
+            np.ndarray: Array of variance images for each component.
+
+        Raises:
+            ValueError: If ICA has not been run.
+        """
         if self.ica.n_components is None:
             raise ValueError(
                 "Run the component analysis before operating or composing on it."
@@ -654,6 +728,11 @@ class VideoAnalyzer:
         return array
 
     def preprocess_video(self) -> np.ndarray:
+        """Apply all preprocessors to the video data.
+
+        Returns:
+            np.ndarray: Preprocessed video data.
+        """
         data = self.video_data.frames
         if self.preprocessors:
             for preprocessor in self.preprocessors:
@@ -661,18 +740,28 @@ class VideoAnalyzer:
         return data
 
     def reverse_preprocess_video(self, data) -> np.ndarray:
+        """Reverse the preprocessing on the video data.
+
+        Args:
+            data (np.ndarray): Preprocessed video data to be reversed.
+
+        Returns:
+            np.ndarray: Video data after reversing the preprocessing.
+        """
         if self.preprocessors:
             for preprocessor in reversed(self.preprocessors):
                 data = preprocessor.reverse_process(data)
         return data
 
     def decompose_video(self):
+        """Decompose the video data using PCA followed by ICA."""
         data = self.preprocess_video()
         data = flatten(data)
         data = self.pca.decompose(data)
         data = self.ica.decompose(data)
 
     def decompose_video_pca_only(self):
+        """Decompose the video data using only PCA."""
         data = self.preprocess_video()
         data = flatten(data)
         data = self.pca.decompose(data)
@@ -680,6 +769,15 @@ class VideoAnalyzer:
     def compose_video(
         self, selected_components: Optional[list[bool]] = None
     ) -> np.ndarray:
+        """Compose the video from selected components.
+
+        Args:
+            selected_components (Optional[list[bool]], optional): List of booleans indicating selected components.
+                                                                  Defaults to None.
+
+        Returns:
+            np.ndarray: Composed video data.
+        """
         data = self.ica.compose(selected_components=selected_components)
         data = self.pca.compose(data)
         data = reverse_flatten(data, self.video_data.frame_shape)
@@ -689,6 +787,15 @@ class VideoAnalyzer:
     def compose_nth_component_video(
         self, component: int, reverse_preprocessing: bool = False
     ) -> np.ndarray:
+        """Compose the video for the nth component.
+
+        Args:
+            component (int): The index of the component to compose.
+            reverse_preprocessing (bool, optional): Whether to reverse the preprocessing. Defaults to False.
+
+        Returns:
+            np.ndarray: Video data for the nth component.
+        """
         data = self.ica.compose_nth_component(component)
         data = self.pca.compose(data)
         data = reverse_flatten(data, self.video_data.frame_shape)
@@ -697,6 +804,11 @@ class VideoAnalyzer:
         return data
 
     def save_components_videos(self) -> None:
+        """Save the videos for each component as MP4 files.
+
+        Raises:
+            ValueError: If ICA has not been run.
+        """
         if self.ica.n_components is None:
             raise ValueError(
                 "Please decompose the video before trying to compose it again."
@@ -707,12 +819,18 @@ class VideoAnalyzer:
             )
 
     def select_components(self) -> List[bool]:
+        """Select components using the variance images array and the selector.
+
+        Returns:
+            List[bool]: List of booleans indicating selected components.
+        """
         selected_components = self.selector.select_components(
             self.variance_images_array()
         )
         return selected_components
 
-    def choose_n_pca_components_interactive(self):
+    def choose_n_pca_components_interactive(self) -> None:
+        """Interactively choose the number of PCA components to keep."""
         self.decompose_video_pca_only()
         self.pca.plot_cumulative_variance()
 
