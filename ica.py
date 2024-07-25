@@ -1,4 +1,4 @@
-"""Apply ICA to denoise images."""
+"""Apply PCA and ICA to denoise videos."""
 
 import os
 import tkinter as tk
@@ -15,18 +15,39 @@ from sklearn.decomposition import PCA, FastICA  # type: ignore
 from TensorPCA.tensorpca import TensorPCA  # type: ignore
 
 
-# Define the abstract base class for Component Selector
 class ComponentSelector(ABC):
+    """Abstract base class for selecting components from ICA/PCA analysis."""
+
     @abstractmethod
     def select_components(self, component_images: np.ndarray) -> List[bool]:
+        """Select components from the provided component images.
+
+        Args:
+            component_images (np.ndarray): Array of component images.
+
+        Returns:
+            List[bool]: List indicating which components are selected.
+        """
         pass
 
 
 class IndividualComponentSelectorGUI(ComponentSelector):
+    """GUI for selecting components one by one."""
+
     def __init__(self):
+        """Initialize the component selector GUI."""
         self.selected_components = []
 
     def select_components(self, component_images: np.ndarray) -> List[bool]:
+        """Launch the GUI to select components from the provided images.
+
+        Args:
+            component_images (np.ndarray): Array of component images.
+
+        Returns:
+            List[bool]: List indicating which components are selected.
+        """
+        # Initialize GUI components
         self.root = tk.Tk()
         self.root.title("ICA Component Selector")
 
@@ -68,6 +89,7 @@ class IndividualComponentSelectorGUI(ComponentSelector):
         return [var.get() for var in self.selected_components]
 
     def plot_component(self):
+        """Plot the current component image in the GUI."""
         # Close the previous figure if it exists
         if hasattr(self, "canvas") and self.canvas:
             plt.close(self.canvas.figure)  # Close the current figure
@@ -84,6 +106,7 @@ class IndividualComponentSelectorGUI(ComponentSelector):
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
         self.update_button_state()
+
         # Update the save button color based on selection state
         if self.selected_components[self.component_index].get():
             self.save_button.config(bg="lightgreen", text="Deselect")
@@ -91,6 +114,7 @@ class IndividualComponentSelectorGUI(ComponentSelector):
             self.save_button.config(bg="lightcoral", text="Select")
 
     def update_button_state(self):
+        """Update the state of navigation buttons."""
         self.prev_button.config(
             state=tk.NORMAL if self.component_index > 0 else tk.DISABLED
         )
@@ -103,20 +127,24 @@ class IndividualComponentSelectorGUI(ComponentSelector):
         )
 
     def next_component(self):
+        """Display the next component."""
         self.component_index += 1
         self.plot_component()
 
     def prev_component(self):
+        """Display the previous component."""
         self.component_index -= 1
         self.plot_component()
 
     def save_selection(self):
+        """Toggle the selection state of the current component."""
         self.selected_components[self.component_index].set(
             not self.selected_components[self.component_index].get()
         )
         self.plot_component()
 
     def finish_selection(self):
+        """Finalize the component selection and close the GUI."""
         if hasattr(self, "canvas") and self.canvas:
             plt.close(self.canvas.figure)  # Close the last figure
         self.root.quit()
@@ -124,10 +152,20 @@ class IndividualComponentSelectorGUI(ComponentSelector):
 
 
 class ComponentAnalysis(ABC):
+    """Abstract base class for component analysis (PCA/ICA)."""
+
     n_components: Optional[int]
 
     @abstractmethod
     def decompose(self, data: np.ndarray) -> np.ndarray:
+        """Decompose the data into components.
+
+        Args:
+            data (np.ndarray): Data to decompose.
+
+        Returns:
+            np.ndarray: Decomposed components.
+        """
         pass
 
     @abstractmethod
@@ -136,19 +174,48 @@ class ComponentAnalysis(ABC):
         components: np.ndarray | None = None,
         selected_components: Optional[list[bool]] = None,
     ) -> np.ndarray:
+        """Recompose data from the selected components.
+
+        Args:
+            components (np.ndarray, optional): Components to recompose. Defaults to None.
+                           If none, recompose from the decomposed components saved in the class.
+            selected_components (Optional[list[bool]], optional): List of selected components. Defaults to None.
+                           If none, use all of them
+
+        Returns:
+            np.ndarray: Reconstructed data.
+        """
         pass
 
     @abstractmethod
     def compose_nth_component(self, component: int) -> np.ndarray:
+        """Recompose data from a specific component.
+
+        Args:
+            component (int): Component index.
+
+        Returns:
+            np.ndarray: Reconstructed data from the specified component.
+        """
         pass
 
 
 class PCAAnalysis(ComponentAnalysis):
+    """Perform PCA (Principal Component Analysis) on data."""
+
     def __init__(
         self,
         n_components: Optional[int] = None,
         variance_threshold: Optional[float] = None,
     ):
+        """Initialize PCAAnalysis with number of components or variance threshold.
+
+        Args:
+            n_components (Optional[int], optional): Number of components to retain. Defaults to None.
+                                                    If None, use the variance threshold
+            variance_threshold (Optional[float], optional): Variance threshold to retain. Defaults to None.
+                                                    If None and n_components None, use all of them.
+        """
         self.n_components = n_components
         self.model: PCA = PCA(
             n_components=(
@@ -161,6 +228,14 @@ class PCAAnalysis(ComponentAnalysis):
         self.variance_threshold: Optional[float] = variance_threshold
 
     def decompose(self, data: np.ndarray) -> np.ndarray:
+        """Decompose data into principal components using PCA.
+
+        Args:
+            data (np.ndarray): Data to decompose.
+
+        Returns:
+            np.ndarray: Decomposed components.
+        """
         print("Applying PCA")
         self.components = self.model.fit_transform(data)
         print(f"PCA shape {self.components.shape}")
@@ -177,6 +252,17 @@ class PCAAnalysis(ComponentAnalysis):
         components: np.ndarray | None = None,
         selected_components: Optional[list[bool]] = None,
     ) -> np.ndarray:
+        """Recompose data from the selected PCA components.
+
+        Args:
+            components (np.ndarray, optional): Matrix components to recompose. Defaults to None.
+                           If none, recompose from the decomposed components saved in the class.
+            selected_components (Optional[list[bool]], optional): List of selected components. Defaults to None.
+                           If none, use all of them.
+
+        Returns:
+            np.ndarray: Reconstructed data.
+        """
         if self.components is None or self.n_components is None:
             raise ValueError(
                 "Before recomposing the PCA components you have to run decompose."
@@ -203,18 +289,20 @@ class PCAAnalysis(ComponentAnalysis):
         return data
 
     def n_components_from_variance(self, variance_threshold: float) -> int:
-        """Get the number of components needed to conserve the specified acumulated variance (between 0 and 1)."""
+        """Get the number of components needed to conserve the specified accumulated variance.
+
+        Args:
+            variance_threshold (float): Variance threshold to retain.
+
+        Returns:
+            int: Number of components needed to conserve the specified variance.
+        """
         cumulative_variance = np.cumsum(self.model.explained_variance_ratio_)
         n_components = np.searchsorted(cumulative_variance, variance_threshold) + 1
         return int(n_components)
 
     def plot_cumulative_variance(self) -> None:
-        """
-        Plot the cumulative explained variance against the number of PCA components.
-
-        Parameters:
-        pca (PCA): The PCA object after fitting the data.
-        """
+        """Plot the cumulative explained variance against the number of PCA components."""
         cumulative_variance = np.cumsum(self.model.explained_variance_ratio_)
         plt.figure(figsize=(8, 6))
         plt.plot(
@@ -230,6 +318,14 @@ class PCAAnalysis(ComponentAnalysis):
         plt.show()
 
     def compose_nth_component(self, component: int) -> np.ndarray:
+        """Recompose data from the nth principal component.
+
+        Args:
+            component (int): Component index.
+
+        Returns:
+            np.ndarray: Reconstructed data from the specified component.
+        """
         if self.n_components is None:
             raise ValueError(
                 "Decompose first the data in it's components to be able to compose them."
@@ -241,13 +337,28 @@ class PCAAnalysis(ComponentAnalysis):
 
 
 class ICAAnalysis(ComponentAnalysis):
+    """Perform ICA (Independent Component Analysis) on data."""
+
     def __init__(self, n_components: Optional[int] = None, max_iter: int = 1000):
+        """Initialize ICAAnalysis with the number of components.
+
+        Args:
+            n_components (int): Number of components to use. If None use them all.
+        """
         self.n_components: Optional[int] = n_components
         self.model: FastICA = FastICA(
             n_components=n_components, random_state=0, max_iter=max_iter
         )
 
     def decompose(self, data: np.ndarray) -> np.ndarray:
+        """Decompose data into independent components using ICA.
+
+        Args:
+            data (np.ndarray): Data to decompose.
+
+        Returns:
+            np.ndarray: Decomposed components.
+        """
         print("Applying ICA")
         self.components = self.model.fit_transform(data)
 
@@ -263,6 +374,17 @@ class ICAAnalysis(ComponentAnalysis):
         components: Optional[np.ndarray] = None,
         selected_components: Optional[list[bool]] = None,
     ) -> np.ndarray:
+        """Recompose data from the selected ICA components.
+
+        Args:
+            components (np.ndarray, optional): Matrix components to recompose. Defaults to None.
+                           If none, recompose from the decomposed components saved in the class.
+            selected_components (Optional[list[bool]], optional): List of selected components. Defaults to None.
+                           If none, use all of them.
+
+        Returns:
+            np.ndarray: Reconstructed data.
+        """
         if self.components is None or self.n_components is None:
             raise ValueError(
                 "Before recomposing the ICA components you have to run decompose."
@@ -289,6 +411,14 @@ class ICAAnalysis(ComponentAnalysis):
         return data
 
     def compose_nth_component(self, component: int) -> np.ndarray:
+        """Recompose data from the nth independent component.
+
+        Args:
+            component (int): Component index.
+
+        Returns:
+            np.ndarray: Reconstructed data from the specified component.
+        """
         if self.n_components is None:
             raise ValueError(
                 "Decompose first the data in it's components to be able to compose them."
@@ -389,17 +519,31 @@ class GaussianSpatialFilter(Preprocessor):
 
 
 class VideoData:
+    """Class to handle loading and saving of video data."""
+
     def __init__(
         self,
         video_path: str,
     ):
+        """Initialize VideoData with the provided video path.
+
+        Args:
+            video_path (str): Path to the video file.
+        """
         self.video_path = video_path
         self.frames: np.ndarray
         self.frame_shape: tuple[int, int]
         self.fps: int
 
     def load_video(self) -> np.ndarray:
-        """Load the video and return a flattened grayscale version."""
+        """Load the video and return a flattened grayscale version.
+
+        Returns:
+            np.ndarray: Array of grayscale frames.
+
+        Raises:
+            ValueError: If the video cannot be loaded or frame shape is incorrect.
+        """
         cap = cv2.VideoCapture(self.video_path)
         frames = []
         frame_shape = None
@@ -437,7 +581,15 @@ class VideoData:
         flat_frames: np.ndarray,
         output_path: str = "output_video.mp4",
     ) -> None:
-        """Normalize and save array flattened of frames as a video file."""
+        """Save an array of flat frames as a video file.
+
+        Args:
+            flat_frames (np.ndarray): Array of video flat frames.
+            output_path (str): Path to save the output video.
+
+        Raises:
+            ValueError: If the frames reshaped array is not 3-dimensional.
+        """
         frames: np.ndarray = flat_frames.reshape(-1, *self.frame_shape)
         self.save_frames_as_mp4(frames, output_path)
 
@@ -446,7 +598,15 @@ class VideoData:
         frames: np.ndarray,
         output_path: str = "output_video.mp4",
     ) -> None:
-        """Normalize and save array flattened of frames as a video file."""
+        """Save an array of frames as a video file.
+
+        Args:
+            frames (np.ndarray): Array of video frames.
+            output_path (str): Path to save the output video.
+
+        Raises:
+            ValueError: If the frames array is not 3-dimensional.
+        """
         if np.ndim(frames) == 3:
             frames = cv2.normalize(frames, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)  # type: ignore
         else:
@@ -552,6 +712,22 @@ class VideoAnalyzer:
         )
         return selected_components
 
+    def choose_n_pca_components_interactive(self):
+        self.decompose_video_pca_only()
+        self.pca.plot_cumulative_variance()
+
+        chosen: bool = False
+        while not chosen:
+            variance_threshold = float(
+                input("How much variance would you like to keep? ")
+            )
+            n_components = self.pca.n_components_from_variance(variance_threshold)
+            print(f"That would need {n_components} number of components.")
+            print("Do you want to get that many number of components?")
+            chosen = ask_y_or_n()
+
+        self.pca = PCAAnalysis(n_components)
+
 
 def save_frame_as_image(frame: np.ndarray, filename: str) -> None:
     """Save a single frame as an image file."""
@@ -569,14 +745,32 @@ def variance_image_from_frames(
 
 
 def flatten(data: np.ndarray) -> np.ndarray:
+    """Reshape video frames (3 dimensions) in a matrix for PCA and ICA.
+
+    Args:
+        frames (np.ndarray): Array of video frames.
+
+    Returns:
+        np.ndarray: Reshaped frames matrix.
+    """
     return data.reshape(len(data), -1)
 
 
 def reverse_flatten(data: np.ndarray, frame_shape: tuple[int, int]) -> np.ndarray:
+    """Reshape flat frames matrix back to original frame shape.
+
+    Args:
+        components (np.ndarray): Matrix of flat frames.
+        frame_shape (tuple[int, int]): Original frame shape.
+
+    Returns:
+        np.ndarray: Reshaped frames, into video (3 dimensions: 1 for time 2 for spatial (pixels)).
+    """
     return data.reshape(-1, *frame_shape)
 
 
 def ask_y_or_n() -> bool:
+    """Ask interactively for yes or no, and return True or False respectively."""
     while True:
         answer = input("Enter y or n (yes or no): ")
         if answer == "y":
@@ -585,20 +779,6 @@ def ask_y_or_n() -> bool:
             return False
         else:
             print("Please enter y or n.")
-
-
-def choose_n_pca_components_interactive(analyzer: VideoAnalyzer) -> int:
-    analyzer.decompose_video_pca_only()
-    analyzer.pca.plot_cumulative_variance()
-
-    chosen: bool = False
-    while not chosen:
-        variance_threshold = float(input("How much variance would you like to keep? "))
-        n_components = analyzer.pca.n_components_from_variance(variance_threshold)
-        print(f"That would need {n_components} number of components.")
-        print("Do you want to get that many number of components?")
-        chosen = ask_y_or_n()
-    return n_components
 
 
 # Example usage
@@ -623,8 +803,7 @@ def main(
     )
 
     # Choose how many components to use
-    n_components = choose_n_pca_components_interactive(analyzer)
-    analyzer.pca = PCAAnalysis(n_components)
+    analyzer.choose_n_pca_components_interactive()
 
     # Decompose video
     analyzer.decompose_video()
