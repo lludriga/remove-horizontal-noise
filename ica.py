@@ -1,17 +1,16 @@
 """Apply PCA and ICA to denoise videos."""
 
 import os
-import tkinter as tk
 from abc import ABC, abstractmethod
-from tkinter import ttk
 from typing import List, Optional
-
 import cv2
-import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from scipy.ndimage import gaussian_filter  # type: ignore
 from sklearn.decomposition import PCA, FastICA  # type: ignore
+import tkinter as tk
+from tkinter import ttk
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import matplotlib.pyplot as plt
 
 
 class ComponentSelector(ABC):
