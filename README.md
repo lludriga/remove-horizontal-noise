@@ -6,7 +6,7 @@ This project provides a comprehensive pipeline for video denoising using various
 
 ## File Descriptions
 
-fourier_transform.py
+### fourier_transform.py
 
 This file implements the denoising of videos by removing horizontal line noise using the Fourier Transform. The primary function remove_horizontal_noise processes each frame of a video to filter out the noise.
 Key Functions:
@@ -14,7 +14,7 @@ Key Functions:
 * remove_horizontal_noise(image): Removes horizontal line noise from an image using the Fourier Transform.
 * Video Processing Script: Reads frames from an input video, applies the remove_horizontal_noise function to each frame, and writes the processed frames to an output video.
 
-## ica.py
+### ica.py
 
 This file contains the implementation of PCA and ICA for video denoising, including GUI components for selecting components to retain in the final reconstruction.
 Key Classes and Functions:
@@ -27,7 +27,7 @@ Key Classes and Functions:
 * Preprocessor (Abstract Base Class): Defines the interface for preprocessing data.
 * MeanFramesSelector: Selects frames based on brightness mean to filter out non-noisy frames.
 
-## VideoAnalyzer Class
+#### VideoAnalyzer Class
 
 The VideoAnalyzer class, which is assumed to be the primary orchestrator of the video processing pipeline, leverages the functionalities provided in fourier_transform.py and ica.py.
 Key Responsibilities:
@@ -37,7 +37,7 @@ Key Responsibilities:
 3. Denoising: Applies Fourier Transform, PCA, and ICA for denoising the video frames.
 4. Component Selection: Utilizes the GUI for selecting components to retain in the final reconstruction.
 
-## Example Usage:
+#### Example Usage:
 
 Below is an example of how the VideoAnalyzer class can be used.
 
