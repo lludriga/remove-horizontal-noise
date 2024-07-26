@@ -2,7 +2,7 @@ import pytest
 import numpy as np
 import cv2
 from ica import (
-    IndividualComponentSelectorGUI,
+    ComponentSelectorGUI,
     VideoData,
     PCAAnalysis,
     ICAAnalysis,
@@ -69,7 +69,7 @@ def test_video_processor_save_frames_as_mp4(sample_video_data, tmpdir):
 
 def test_individual_component_selector_gui():
     """Test the GUI component selector (limited test)."""
-    selector = IndividualComponentSelectorGUI()
+    selector = ComponentSelectorGUI()
     component_images = np.random.rand(10, 10000).reshape(10, 100, 100)  # Mock component images
     selected_components = selector.select_components(component_images, "bwr")
     assert len(selected_components) == 10  # Assuming 10 components

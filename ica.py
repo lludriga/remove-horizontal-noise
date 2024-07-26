@@ -1,16 +1,18 @@
 """Apply PCA and ICA to denoise videos."""
 
+import json
 import os
+import tkinter as tk
 from abc import ABC, abstractmethod
+from tkinter import ttk
 from typing import List, Optional
+
 import cv2
+import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from scipy.ndimage import gaussian_filter  # type: ignore
 from sklearn.decomposition import PCA, FastICA  # type: ignore
-import tkinter as tk
-from tkinter import ttk
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-import matplotlib.pyplot as plt
 
 
 class ComponentSelector(ABC):
@@ -30,14 +32,16 @@ class ComponentSelector(ABC):
         pass
 
 
-class IndividualComponentSelectorGUI(ComponentSelector):
+class ComponentSelectorGUI(ComponentSelector):
     """GUI for selecting components one by one."""
 
     def __init__(self):
         """Initialize the component selector GUI."""
-        self.selected_components = []
+        self.is_component_selected = []
 
-    def select_components(self, component_images: np.ndarray, cmap: str) -> List[bool]:
+    def select_components(
+        self, component_images: np.ndarray, cmap: str = "bwr"
+    ) -> List[bool]:
         """Launch the GUI to select components from the provided images.
 
         Args:
@@ -52,7 +56,7 @@ class IndividualComponentSelectorGUI(ComponentSelector):
 
         self.cmap = cmap
         self.components = component_images
-        self.selected_components = [
+        self.is_component_selected = [
             tk.BooleanVar(value=True) for _ in range(self.components.shape[0])
         ]
 
@@ -86,7 +90,7 @@ class IndividualComponentSelectorGUI(ComponentSelector):
         self.plot_component()
 
         self.root.mainloop()
-        return [var.get() for var in self.selected_components]
+        return [var.get() for var in self.is_component_selected]
 
     def plot_component(self):
         """Plot the current component image in the GUI."""
@@ -108,7 +112,7 @@ class IndividualComponentSelectorGUI(ComponentSelector):
         self.update_button_state()
 
         # Update the save button color based on selection state
-        if self.selected_components[self.component_index].get():
+        if self.is_component_selected[self.component_index].get():
             self.save_button.config(bg="lightgreen", text="Deselect")
         else:
             self.save_button.config(bg="lightcoral", text="Select")
@@ -138,8 +142,8 @@ class IndividualComponentSelectorGUI(ComponentSelector):
 
     def save_selection(self):
         """Toggle the selection state of the current component."""
-        self.selected_components[self.component_index].set(
-            not self.selected_components[self.component_index].get()
+        self.is_component_selected[self.component_index].set(
+            not self.is_component_selected[self.component_index].get()
         )
         self.plot_component()
 
@@ -172,14 +176,14 @@ class ComponentAnalysis(ABC):
     def compose(
         self,
         components: np.ndarray | None = None,
-        selected_components: Optional[list[bool]] = None,
+        is_component_selected: Optional[list[bool]] = None,
     ) -> np.ndarray:
         """Recompose data from the selected components.
 
         Args:
             components (np.ndarray, optional): Components to recompose. Defaults to None.
                            If none, recompose from the decomposed components saved in the class.
-            selected_components (Optional[list[bool]], optional): List of selected components. Defaults to None.
+            is_component_selected (Optional[list[bool]], optional): List of selected components. Defaults to None.
                            If none, use all of them
 
         Returns:
@@ -250,14 +254,14 @@ class PCAAnalysis(ComponentAnalysis):
     def compose(
         self,
         components: np.ndarray | None = None,
-        selected_components: Optional[list[bool]] = None,
+        is_component_selected: Optional[list[bool]] = None,
     ) -> np.ndarray:
         """Recompose data from the selected PCA components.
 
         Args:
             components (np.ndarray, optional): Matrix components to recompose. Defaults to None.
                            If none, recompose from the decomposed components saved in the class.
-            selected_components (Optional[list[bool]], optional): List of selected components. Defaults to None.
+            is_component_selected (Optional[list[bool]], optional): List of selected components. Defaults to None.
                            If none, use all of them.
 
         Returns:
@@ -267,16 +271,16 @@ class PCAAnalysis(ComponentAnalysis):
             raise ValueError(
                 "Before recomposing the PCA components you have to run decompose."
             )
-        if selected_components is None:
-            selected_components = [True for i in range(self.n_components)]
-        if len(selected_components) != self.n_components:
+        if is_component_selected is None:
+            is_component_selected = [True for i in range(self.n_components)]
+        if len(is_component_selected) != self.n_components:
             raise ValueError("Incorrect length of list of selected components.")
 
         if components is None:
             components = self.components
 
         print("Reverting PCA")
-        inverted_selection = np.invert(selected_components)
+        inverted_selection = np.invert(is_component_selected)
         inverted_indices = [
             i for i, include in enumerate(inverted_selection) if include
         ]
@@ -330,9 +334,9 @@ class PCAAnalysis(ComponentAnalysis):
             raise ValueError(
                 "Decompose first the data in it's components to be able to compose them."
             )
-        selected_components = [False for i in range(self.n_components)]
-        selected_components[component] = True
-        video = self.compose(selected_components=selected_components)
+        is_component_selected = [False for i in range(self.n_components)]
+        is_component_selected[component] = True
+        video = self.compose(is_component_selected=is_component_selected)
         return video
 
 
@@ -372,14 +376,14 @@ class ICAAnalysis(ComponentAnalysis):
     def compose(
         self,
         components: Optional[np.ndarray] = None,
-        selected_components: Optional[list[bool]] = None,
+        is_component_selected: Optional[list[bool]] = None,
     ) -> np.ndarray:
         """Recompose data from the selected ICA components.
 
         Args:
             components (np.ndarray, optional): Matrix components to recompose. Defaults to None.
                            If none, recompose from the decomposed components saved in the class.
-            selected_components (Optional[list[bool]], optional): List of selected components. Defaults to None.
+            is_component_selected (Optional[list[bool]], optional): List of selected components. Defaults to None.
                            If none, use all of them.
 
         Returns:
@@ -389,16 +393,16 @@ class ICAAnalysis(ComponentAnalysis):
             raise ValueError(
                 "Before recomposing the ICA components you have to run decompose."
             )
-        if selected_components is None:
-            selected_components = [True for i in range(self.n_components)]
-        if len(selected_components) != self.n_components:
+        if is_component_selected is None:
+            is_component_selected = [True for i in range(self.n_components)]
+        if len(is_component_selected) != self.n_components:
             raise ValueError("Incorrect length of list of selected components.")
 
         if components is None:
             components = self.components
 
         print("Reverting ICA")
-        inverted_selection = np.invert(selected_components)
+        inverted_selection = np.invert(is_component_selected)
         inverted_indices = [
             i for i, include in enumerate(inverted_selection) if include
         ]
@@ -423,9 +427,9 @@ class ICAAnalysis(ComponentAnalysis):
             raise ValueError(
                 "Decompose first the data in it's components to be able to compose them."
             )
-        selected_components = [False for i in range(self.n_components)]
-        selected_components[component] = True
-        video = self.compose(selected_components=selected_components)
+        is_component_selected = [False for i in range(self.n_components)]
+        is_component_selected[component] = True
+        video = self.compose(is_component_selected=is_component_selected)
         return video
 
 
@@ -692,7 +696,6 @@ class VideoAnalyzer:
         preprocessors: List[Preprocessor],
         pca: PCAAnalysis,
         ica: ICAAnalysis,
-        selector: ComponentSelector = IndividualComponentSelectorGUI(),
     ):
         """Initialize VideoAnalyzer with video data, preprocessors, PCA, ICA, and a selector.
 
@@ -708,7 +711,6 @@ class VideoAnalyzer:
         self.preprocessors = preprocessors
         self.pca = pca
         self.ica = ica
-        self.selector = selector
 
     def get_variance_images(self) -> np.ndarray:
         """Generate an array of variance images for each component.
@@ -768,18 +770,18 @@ class VideoAnalyzer:
         data = self.pca.decompose(data)
 
     def compose_video(
-        self, selected_components: Optional[list[bool]] = None
+        self, is_component_selected: Optional[list[bool]] = None
     ) -> np.ndarray:
         """Compose the video from selected components.
 
         Args:
-            selected_components (Optional[list[bool]], optional): List of booleans indicating selected components.
+            is_component_selected (Optional[list[bool]], optional): List of booleans indicating selected components.
                                                                   Defaults to None.
 
         Returns:
             np.ndarray: Composed video data.
         """
-        data = self.ica.compose(selected_components=selected_components)
+        data = self.ica.compose(is_component_selected=is_component_selected)
         data = self.pca.compose(data)
         data = reverse_flatten(data, self.video_data.frame_shape)
         data = self.reverse_preprocess_video(data)
@@ -818,17 +820,6 @@ class VideoAnalyzer:
             self.video_data.save_frames_as_mp4(
                 self.compose_nth_component_video(i), f"component_{i}.mp4"
             )
-
-    def select_components_from_images(
-        self, images: np.ndarray, cmap: str = "bwr"
-    ) -> List[bool]:
-        """Select components using the images array and the selector.
-
-        Returns:
-            List[bool]: List of booleans indicating selected components.
-        """
-        selected_components = self.selector.select_components(images, cmap)
-        return selected_components
 
     def choose_n_pca_components_interactive(self) -> None:
         """Interactively choose the number of PCA components to keep."""
@@ -928,6 +919,35 @@ def ask_y_or_n() -> bool:
             print("Please enter y or n.")
 
 
+def save_is_component_selected_json(
+    is_component_selected: list[bool], video_path: str
+) -> None:
+    """Save the list of bools with the information of components that are selected to json.
+
+    Args:
+        is_component_selected (list[bool]): list of bools saying if each component is
+                                            selected for the reconstruction or not.
+        video_path: path of the video from the analysis, so the name of the file corresponds with it.
+    """
+    with open(f"{video_path}_is_component_selected.json", "w") as f:
+        json.dump(is_component_selected, f)
+
+
+def load_is_component_selected_json(video_path: str) -> list[bool]:
+    """Load the list of bools with the information of components that are selected from json.
+
+    Args:
+        video_path: path of the video from the analysis, so the name of the file corresponds with it.
+    Returns:
+        is_component_selected (list[bool]): list of bools saying if each component is
+                                            selected for the reconstruction or not.
+    """
+    with open(f"{video_path}_is_component_selected.json", "r") as f:
+        is_component_selected = json.load(f)
+
+    return is_component_selected
+
+
 # Example usage
 def main(
     video_path: str,
@@ -957,16 +977,18 @@ def main(
 
     # Select ICA components
     # Two options: component maps and variance images (more expensive)
-    selected_components = analyzer.select_components_from_images(
+    is_component_selected = ComponentSelectorGUI().select_components(
         analyzer.get_component_maps()
     )
+    save_is_component_selected_json(is_component_selected, video_path)
+
     video.save_frames_as_mp4(
-        analyzer.compose_video(selected_components=selected_components), output_path
+        analyzer.compose_video(is_component_selected=is_component_selected), output_path
     )
 
-    non_selected_components = [not selected for selected in selected_components]
+    non_selected_components = [not selected for selected in is_component_selected]
     video.save_frames_as_mp4(
-        analyzer.compose_video(selected_components=non_selected_components),
+        analyzer.compose_video(is_component_selected=non_selected_components),
         "non_selected.mp4",
     )
 
