@@ -89,21 +89,15 @@ def main(
 ```
 
 
-## Example Usage
-
-video_analyzer = VideoAnalyzer("input_video.mp4", "output_video.mp4")
-video_analyzer.process_video()
-
 Main Pipeline
 
 1. Initialization: Create an instance of VideoAnalyzer with the input and output video paths.
 2. Reading Frames: Read frames from the input video.
-3. Preprocessing: Preprocess the frames to select the noisy ones.
-4. Fourier Transform: Apply Fourier Transform to remove horizontal noise.
+3. Preprocessing: Preprocess the frames to select the noisy ones or apply filters.
 5. PCA: Apply PCA to decompose and recompose the frames.
 6. ICA: Apply ICA to decompose and recompose the frames.
 7. Writing Frames: Write the processed frames to the output video.
 
-Conclusion
 
-This pipeline provides a robust framework for denoising video data using a combination of Fourier Transform, PCA, and ICA. The VideoAnalyzer class coordinates the entire process, ensuring seamless integration and processing of video frames.
+## TODO
+- [ ] Look at tensor decomposition (TensorPCA, Tucker, CP, etc.)
