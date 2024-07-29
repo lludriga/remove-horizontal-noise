@@ -29,8 +29,10 @@ def sample_video_data():
 def test_mean_frames_selector_process(sample_video_data):
     """Test the MeanFramesSelector process method."""
     preprocessor = MeanFramesSelector(batch_size=3)
-    processed_frames = preprocessor.process(sample_video_data.frames)
+    processed_frames = preprocessor.preprocess(sample_video_data.frames)
     assert processed_frames.shape[0] == (sample_video_data.frames.shape[0] // 3) * 2 + 1
+    postprocessed_frames = preprocessor.postprocess(processed_frames)
+    assert postprocessed_frames.shape == sample_video_data.frames.shape
 
 
 def test_pca_analysis(sample_video_data):

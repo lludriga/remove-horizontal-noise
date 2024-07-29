@@ -1,62 +1,54 @@
-from ica import *
+import matplotlib.pyplot as plt
+import numpy as np
 
-# Ensure the intermediate frames directory exists
-os.makedirs("intermediate_frames", exist_ok=True)
+from ica import (ComponentSelectorGUI, GaussianSpatialFilter, ICAAnalysis,
+                 PCAAnalysis, VideoAnalyzer, VideoData, save_frame_as_image,
+                 save_is_component_selected_json)
 
+# Initialize VideoProcessor with preprocessors and analysis methods
 video_path = "0.avi"
-n_components = 50
+output_path = "output_video.mp4"
+video = VideoData(
+    video_path,
+)
+
+# Load video
+video.load_video()
+
+n_components = 122
+
+analyzer = VideoAnalyzer(
+    video,
+    [GaussianSpatialFilter()],
+    PCAAnalysis(n_components),
+    ICAAnalysis(),
+)
+
+# Choose how many components to use
+# analyzer.choose_n_pca_components_interactive()
+
+# Decompose video
+analyzer.decompose_video()
+images = analyzer.get_component_maps()
+images = abs(images)
+
+for i, image in enumerate(images):
+    save_frame_as_image(image, f"component_map_{i}.png")
 
 
-## Select frames with potential noise
-# selected_frames: List[bool] = analyze_and_select_frames(video_data.flat_frames)
-#
-# print(
-# """The ica anlyisis will be applied to the following frames
-# which are most probably noisy, based on the assumption that
-# they have black lines of noise (the mean birghtness is lower):"""
+# Select ICA components
+# Two options: component maps and variance images (more expensive)
+# is_component_selected = ComponentSelectorGUI().select_components(
+#    analyzer.get_component_maps()
 # )
-# print(np.array(range(len(selected_frames)))[selected_frames])
-# selected_video_data = VideoData(
-# video_data.flat_frames[selected_frames], video_data.frame_shape, video_data.fps
+# save_is_component_selected_json(is_component_selected, video_path)
+#
+# video.save_frames_as_mp4(
+#    analyzer.compose_video(is_component_selected=is_component_selected), output_path
 # )
 #
-# pca_result = apply_pca(selected_video_data.flat_frames, selected_video_data.flat_frames.shape[0])
-# plot_cumulative_variance(pca_result.model)
-
-video_data: VideoData = process_video(video_path)
-video_data.flat_frames = video_data.flat_frames[0:200,:]
-
-# Select frames with potential noise
-selected_frames: List[bool] = analyze_and_select_frames(video_data.flat_frames)
-
-print(
-    """The ica anlyisis will be applied to the following frames
-    which are most probably noisy, based on the assumption that
-    they have black lines of noise (the mean birghtness is lower):"""
-)
-print(np.array(range(len(selected_frames)))[selected_frames])
-selected_video_data = VideoData(
-    video_data.flat_frames[selected_frames], video_data.frame_shape, video_data.fps
-)
-
-# Apply PCA and ICA
-pca_result, ica_result = apply_pca_and_ica(
-    selected_video_data.flat_frames, n_components
-)
-
-for i in range(n_components):
-    save_frame_as_image(
-        variance_image_from_video(
-            video_from_nth_pca(pca_result, i), video_data.frame_shape
-        ),
-        f"variance_pca_component_{i}.png",
-    )
-
-
-for i in range(n_components):
-    save_frame_as_image(
-        variance_image_from_video(
-            video_from_nth_ica(pca_result.model, ica_result, i), video_data.frame_shape
-        ),
-        f"variance_component_{i}.png",
-    )
+# non_selected_components = [not selected for selected in is_component_selected]
+# video.save_frames_as_mp4(
+#    analyzer.compose_video(is_component_selected=non_selected_components),
+#    "non_selected.mp4",
+# )
