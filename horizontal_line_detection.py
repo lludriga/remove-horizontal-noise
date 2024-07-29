@@ -33,7 +33,7 @@ def thresholdPipeline(path: str) -> bool:
     lines = cv2.HoughLinesP(
         img,
         rho=1,  # resolution of the parameter rho (1 pixel)
-        theta=math.pi / 2,  # resolution of the theta parameter (1 degree)
+        theta=math.pi / 2,  # resolution of the theta parameter (90 degree)
         threshold=200,
         lines=None,
         minLineLength=150,
