@@ -154,6 +154,7 @@ class ComponentSelectorGUI(ComponentSelector):
         self.root.destroy()
 
 
+# TODO documentation
 class AutoSelector(ComponentSelector):
 
     def select_components(self, component_images: np.ndarray) -> List[bool]:
@@ -597,6 +598,7 @@ class GaussianSpatialFilter(Preprocessor):
         return gaussian_filter(data, sigma=self.sigma, axes=(1, 2))
 
 
+# TODO export to avi
 class VideoData:
     """Class to handle loading and saving of video data."""
 
