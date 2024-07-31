@@ -156,10 +156,11 @@ class ComponentSelectorGUI(ComponentSelector):
 
 # TODO documentation
 class AutoSelector(ComponentSelector):
-
     def select_components(self, component_images: np.ndarray) -> List[bool]:
         component_images = abs(component_images)
-        component_images = cv2.normalize(component_images, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)  # type: ignore
+        component_images = cv2.normalize(
+            component_images, None, 0, 255, cv2.NORM_MINMAX
+        ).astype(np.uint8)  # type: ignore
         is_component_selected: list[bool] = []
         for image in component_images:
             is_component_selected.append(self.detectLines(image))
@@ -168,9 +169,7 @@ class AutoSelector(ComponentSelector):
 
     def detectLines(self, img: np.ndarray) -> bool:
         """Detect if an image contains lines, modify parameters if performance not optimal."""
-        ret, img = cv2.threshold(
-            img, np.quantile(img, 0.95), 255, cv2.THRESH_BINARY
-        )  # type: ignore
+        ret, img = cv2.threshold(img, np.quantile(img, 0.95), 255, cv2.THRESH_BINARY)  # type: ignore
         lines = cv2.HoughLinesP(
             img,
             rho=1,  # resolution of the parameter rho (1 pixel)
@@ -689,7 +688,9 @@ class VideoData:
             ValueError: If the frames array is not 3-dimensional.
         """
         if np.ndim(frames) == 3:
-            frames = cv2.normalize(frames, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)  # type: ignore
+            frames = cv2.normalize(frames, None, 0, 255, cv2.NORM_MINMAX).astype(  # type: ignore
+                np.uint8
+            )
         else:
             raise Exception("Invalid dimensions for video when reshaping.")
 
