@@ -972,7 +972,7 @@ def load_is_component_selected_json(video_path: str, n_components: int) -> list[
                                             selected for the reconstruction or not.
     """
     with open(f"{video_path}_is_component_selected_{n_components}.json", "r") as f:
-        is_component_selected = json.load(f)
+        is_component_selected: list[bool] = json.load(f)
 
     return is_component_selected
 
