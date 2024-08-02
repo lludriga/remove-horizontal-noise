@@ -1,0 +1,59 @@
+#+options: ':nil *:t -:t ::t <:t H:3 \n:nil ^:t arch:headline
+#+options: author:t broken-links:nil c:nil creator:nil
+#+options: d:(not "LOGBOOK") date:t e:t email:nil expand-links:t f:t
+#+options: inline:t num:t p:nil pri:nil prop:nil stat:t tags:t
+#+options: tasks:t tex:t timestamp:t title:t toc:t todo:t |:t
+#+title: Eliminació de soroll visual en imatges de calci
+#+date: <2024-08-02 dv.>
+#+author: Joan Torregrosa Torres
+#+email: joantorreg@gmail.com
+#+language: ca
+#+select_tags: export
+#+exclude_tags: noexport
+#+creator: Emacs 29.4 (Org mode 9.7.7)
+#+cite_export:
+#+startup: beamer
+#+LaTeX_CLASS: beamer
+#+LaTeX_CLASS_OPTIONS: [bigger]
+#+latex_header: \mode<beamer>{\usetheme{Madrid}}
+#+OPTIONS: H:2
+#+COLUMNS: %40ITEM %10BEAMER_env(Env) %9BEAMER_envargs(Env Args) %4BEAMER_col(Col) %10BEAMER_extra(Extra)
+#+BEAMER_HEADER: \AtBeginSection[]{\begin{frame}<beamer>\frametitle{\secname}\tableofcontents[currentsection]\end{frame}}
+
+* Presentació del problema
+
+** Tipus de soroll
+Imatge amb/ imatge sense
+
+* Diverses solucions explorades
+
+** Espai freqüencial (DFT)
+Per llevar completament el soroll, crea artificis.
+
+** Transformada de Hilber-Huang
+No separava la component de soroll i la imatge no es reconstruia tan nítida.
+
+** Xarxes neuronals de denoising
+La banda de soroll és massa pronunciada, la consideren part de la imatge i no soroll.
+
+* Solució trobada i fonts
+
+** Independent Component Analysis
+
+** Filtre gaussià espacial previ
+Citar article i CaImAn
+
+** Tamany del kernel i desviació típica
+
+** Visualització de components
+
+** Selecció manual
+
+** Automatització de la selecció
+
+** Limitacions de la automatització
+
+* Exemple de ús
+* Possibles millores en el futur
+** Descomposició tensorial
+Ventatja: al conservar la estructura espacial dels pixels i cada component codificar més informació, és possible que done menys components i aille més fàcilment la banda de soroll.
