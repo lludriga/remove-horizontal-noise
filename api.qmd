@@ -1,0 +1,10 @@
+---
+title: Quarto Layout
+author: Joan Torregrosa Torres
+format:
+    html:
+        code-fold: true
+reference-location: margin
+jupyter: python3
+---
+# API per a eliminar el soroll de videos comodament (i flexible)

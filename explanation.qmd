@@ -1,0 +1,76 @@
+---
+title: Quarto Layout
+author: Joan Torregrosa Torres
+format:
+    html:
+        code-fold: true
+reference-location: margin
+jupyter: python3
+---
+# Independent component analysis per eliminar soroll visual dels videos
+
+En aquest document explicarem com eliminar un soroll concret, linies horitzontals markades, d'un video de neurones, pas a pas.
+També hi ha un programa amb una API per a usar sense haver de anar pas a pas i més cómoda, explicada a [api.qmd](aquest fitxer).
+
+Comencem important tot els paquets que ens seran necessaris al llarg del procés:
+
+```{python}
+import math
+import cv2
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from scipy.ndimage import gaussian_filter  # type: ignore
+from sklearn.decomposition import PCA, FastICA  # type: ignore
+```
+
+## Carreguem el video
+
+Carreguem el video a python, que serà una array de 3 dimensions, una temporal i dos espacials, representant el video en blanc i negre.
+
+```{python}
+video_path = "0.avi"
+cap = cv2.VideoCapture(video_path)
+frames = []
+frame_shape = None
+
+frame_count = 0
+while True:
+    ret, frame = cap.read()
+    if not ret:
+        break
+    frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    frames.append(frame_gray)
+
+    if frame_shape is None:
+        frame_shape = frame_gray.shape
+
+    frame_count += 1
+
+fps = int(cap.get(cv2.CAP_PROP_FPS))
+cap.release()
+
+frames = np.array(frames)
+```
+
+## Apliquem un filtre gaussia espacial
+
+Abans de poder aplicar l'anàlisi de components independents (ICA), processem el video amb un filtre Gaussia espacial, com fan tambe en
+
+TODO: citar articles
+
+amb el tamany del kernel i tal i relacio senyal soroll i tal i 
+
+TODO: citar articles
+
+## Analitzem amb un principal component analysis
+
+## Seleccionem el nombre de components necessaris
+
+## Apliquem el independent component analysis a les components
+
+## Seleccionem les components que ens quedem per a la reconstrucció del video
+
+## Reconstruim el video
+
+## Extra: reconstruim les components no utilitzades
