@@ -1,5 +1,5 @@
 ---
-title: Quarto Layout
+title: Independent comonent analysis per eliminar el soroll visual dels videos
 author: Joan Torregrosa Torres
 format:
     html:
@@ -132,22 +132,22 @@ També podem vore com afecta a la qualitat de la imatge i dels detalls aplicar a
 #|   - "Gauss filter sigma=1"
 #|   - "Gauss filter sigma=2"
 #|   - "Gauss filter sigma=3"
+
 frame_0 = frames[0]
-fig, ax = plt.subplots()
-ax.imshow(frame_0, cmap='gray')
+fig, ax = plt.subplots();
+ax.imshow(frame_0, cmap='gray');
 
 frame_gauss_1 = gaussian_filter(frame_0, sigma=1)
-fig, ax = plt.subplots()
-ax.imshow(frame_gauss_1, cmap='gray')
+fig, ax = plt.subplots();
+ax.imshow(frame_gauss_1, cmap='gray');
 
 frame_gauss_2 = gaussian_filter(frame_0, sigma=2)
-fig, ax = plt.subplots()
-ax.imshow(frame_gauss_2, cmap='gray')
+fig, ax = plt.subplots();
+ax.imshow(frame_gauss_2, cmap='gray');
 
 frame_gauss_3 = gaussian_filter(frame_0, sigma=3)
-fig, ax = plt.subplots()
-ax.imshow(frame_gauss_3, cmap='gray')
-
+fig, ax = plt.subplots();
+ax.imshow(frame_gauss_3, cmap='gray');
 ```
 
 Així, veiem que entre 1 i 2 seria suficient, podem agafar 1.5.
