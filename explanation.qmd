@@ -24,6 +24,7 @@ import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from scipy.ndimage import gaussian_filter  # type: ignore
 from sklearn.decomposition import PCA, FastICA  # type: ignore
+import skvideo.io  # type: ignore
 ```
 
 ## Carreguem el video
@@ -55,7 +56,8 @@ cap.release()
 frames = np.array(frames)
 ```
 
-{{< video 0.mp4 >}}
+[Original video](0.avi)
+
 
 ## Apliquem un filtre gaussia espacial
 
@@ -322,7 +324,7 @@ data = pca.inverse_transform(data)
 video = data.reshape(-1, *frame_shape)
 ```
 
-I el guardem (per ara en mp4, per guardar en avi ens fara falt utilitzar ffmpeg)
+I el guardem (guardar en mp4 no te dependencies, en canvi lossless necessita tindre el programa ffmpeg).
 
 ```{python}
 def save_frames_as_mp4(frames, output_path):
@@ -344,13 +346,34 @@ def save_frames_as_mp4(frames, output_path):
 
     out.release()
     print(f"Video saved as {output_path}")
+
+def save_frames_lossless(frames, output_path):
+    frames = cv2.normalize(frames, None, 0, 255, cv2.NORM_MINMAX).astype(  # type: ignore
+            np.uint8
+    )
+
+    writer = skvideo.io.FFmpegWriter(output_path, outputdict={
+        '-r': f'{fps}',
+        '-vcodec': 'libx264',  #use the h.264 codec
+        '-crf': '0',           #set the constant rate factor to 0, which is lossless
+        '-preset':'veryslow',   #the slower the better compression, in princple, try 
+                             #other options see https://trac.ffmpeg.org/wiki/Encode/H.264
+        },
+        inputdict={
+        '-r': f'{fps}'
+        }) 
+    for frame in frames:
+        writer.writeFrame(frame)  #write the frame as RGB not BGR
+
+    writer.close() #close the writer
+    print(f"Video saved as {output_path}")
 ```
 
 ```{python}
-save_frames_as_mp4(video, "denoised.mp4")
+save_frames_lossless(video, "denoised.avi")
 ```
 
-{{< video denoised.mp4 >}}
+[Denoised video](denoised.avi)
 
 ## Reconstruim les components no utilitzades
 
@@ -370,10 +393,10 @@ data = ica.inverse_transform(remaining_components)
 data = pca.inverse_transform(data)
 video = data.reshape(-1, *frame_shape)
 
-save_frames_as_mp4(video, "noise.mp4")
+save_frames_lossless(video, "noise.avi")
 ```
 
-{{< video noise.mp4 >}}
+[Only noise video](noise.avi)
 
 ## Mètodes que no han funcionat
 

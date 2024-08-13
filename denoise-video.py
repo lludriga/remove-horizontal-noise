@@ -24,7 +24,7 @@ def main():
         "--output-path",
         type=str,
         required=False,
-        help="path of the output denoised video. Default path out.mp4",
+        help="path of the output denoised video. Default path out.avi",
     )
     parser.add_argument(
         "-n",
@@ -33,12 +33,23 @@ def main():
         action="store_true",
         help="if in use, also save the video of the non selected components for debugging, saved as non_selected_{output_path}",
     )
+    parser.add_argument(
+        "--no-ffmpeg",
+        required=False,
+        action="store_true",
+        help="""use if ffmpeg is not available in the system.
+        It will save the video as mp4, and not lossless as would be with ffmpeg.
+        Note that --output-path has to be an mp4 file.""",
+    )
 
     args = parser.parse_args()
 
     # We put default values if not passed as arguments
     if args.output_path is None:
-        output_path = "out.mp4"
+        if args.no_ffmpeg:
+            output_path = "out.mp4"
+        else:
+            output_path = "out.avi"
     else:
         output_path = args.output_path
 
@@ -71,17 +82,30 @@ def main():
     print(f"Selected {sum(is_component_selected)} components")
 
     print("Saving denoised video")
-    video.save_frames_as_mp4(
-        analyzer.compose_video(is_component_selected=is_component_selected), output_path
-    )
+    if args.no_ffmpeg:
+        video.save_frames_as_mp4(
+            analyzer.compose_video(is_component_selected=is_component_selected),
+            output_path,
+        )
+    else:
+        video.save_frames_lossless(
+            analyzer.compose_video(is_component_selected=is_component_selected),
+            output_path,
+        )
 
     if args.save_not_selected_components:
         print("Saving video of not selected components")
         non_selected_components = [not selected for selected in is_component_selected]
-        video.save_frames_as_mp4(
-            analyzer.compose_video(is_component_selected=non_selected_components),
-            f"non_selected_{output_path}",
-        )
+        if args.no_ffmpeg:
+            video.save_frames_as_mp4(
+                analyzer.compose_video(is_component_selected=non_selected_components),
+                f"non_selected_{output_path}",
+            )
+        else:
+            video.save_frames_lossless(
+                analyzer.compose_video(is_component_selected=non_selected_components),
+                f"non_selected_{output_path}",
+            )
 
 
 if __name__ == "__main__":

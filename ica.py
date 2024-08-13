@@ -11,6 +11,7 @@ from typing import List, Optional
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
+import skvideo.io  # type: ignore
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from scipy.ndimage import gaussian_filter  # type: ignore
 from sklearn.decomposition import PCA, FastICA  # type: ignore
@@ -597,7 +598,6 @@ class GaussianSpatialFilter(Preprocessor):
         return gaussian_filter(data, sigma=self.sigma, axes=(1, 2))
 
 
-# TODO export to avi
 class VideoData:
     """Class to handle loading and saving of video data."""
 
@@ -707,6 +707,42 @@ class VideoData:
             out.write(frame)
 
         out.release()
+        print(f"Video saved as {output_path}")
+
+    def save_frames_lossless(
+        self, frames: np.ndarray, output_path: str = "output_video.mp4"
+    ) -> None:
+        """Save an array of frames as a video file. Depends on ffmpeg installed.
+
+        Args:
+            frames (np.ndarray): Array of video frames.
+            output_path (str): Path to save the output video.
+
+        Raises:
+            ValueError: If the frames array is not 3-dimensional.
+        """
+        if np.ndim(frames) == 3:
+            frames = cv2.normalize(frames, None, 0, 255, cv2.NORM_MINMAX).astype(  # type: ignore
+                np.uint8
+            )
+        else:
+            raise Exception("Invalid dimensions for video when reshaping.")
+
+        writer = skvideo.io.FFmpegWriter(
+            output_path,
+            outputdict={
+                "-r": f"{self.fps}",
+                "-vcodec": "libx264",  # use the h.264 codec
+                "-crf": "0",  # set the constant rate factor to 0, which is lossless
+                "-preset": "veryslow",  # the slower the better compression, in princple, try
+                # other options see https://trac.ffmpeg.org/wiki/Encode/H.264
+            },
+            inputdict={"-r": f"{self.fps}"},
+        )
+        for frame in frames:
+            writer.writeFrame(frame)  # write the frame as RGB not BGR
+
+        writer.close()  # close the writer
         print(f"Video saved as {output_path}")
 
 
@@ -1007,15 +1043,26 @@ def main(
     )
     save_is_component_selected_json(is_component_selected, video_path)
 
-    video.save_frames_as_mp4(
+    # Depends on ffmpeg installed on the system
+    # If not installed, use save_frames_as_mp4
+    video.save_frames_lossless(
         analyzer.compose_video(is_component_selected=is_component_selected), output_path
     )
+    # video.save_frames_as_mp4(
+    #     analyzer.compose_video(is_component_selected=is_component_selected), output_path
+    # )
 
     non_selected_components = [not selected for selected in is_component_selected]
-    video.save_frames_as_mp4(
+    # Depends on ffmpeg installed on the system
+    # If not installed, use save_frames_as_mp4
+    video.save_frames_lossless(
         analyzer.compose_video(is_component_selected=non_selected_components),
-        "non_selected_auto.mp4",
+        f"non_selected_{output_path}",
     )
+    # video.save_frames_as_mp4(
+    #     analyzer.compose_video(is_component_selected=non_selected_components),
+    #     f"non_selected_{output_path}",
+    # )
 
 
 if __name__ == "__main__":

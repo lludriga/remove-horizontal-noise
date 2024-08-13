@@ -25,6 +25,7 @@ La manera de usar-la més simple i típica es troba en la funció `main()`:
 from ica import AutoSelector, GaussianSpatialFilter, VideoAnalyzer, VideoData
 
 video_path = "0.avi"
+output_path = "out.avi"
 
 # Initialize VideoProcessor with preprocessors and analysis methods
 video = VideoData(
@@ -47,15 +48,26 @@ is_component_selected = AutoSelector().select_components(
     analyzer.get_component_maps()
 )
 
-video.save_frames_as_mp4(
+# Depends on ffmpeg installed on the system
+# If not installed, use save_frames_as_mp4
+video.save_frames_lossless(
     analyzer.compose_video(is_component_selected=is_component_selected), output_path
 )
+# video.save_frames_as_mp4(
+#     analyzer.compose_video(is_component_selected=is_component_selected), output_path
+# )
 
 non_selected_components = [not selected for selected in is_component_selected]
-video.save_frames_as_mp4(
+# Depends on ffmpeg installed on the system
+# If not installed, use save_frames_as_mp4
+video.save_frames_lossless(
     analyzer.compose_video(is_component_selected=non_selected_components),
-    "non_selected_auto.mp4",
+    f"non_selected_{output_path}",
 )
+# video.save_frames_as_mp4(
+#     analyzer.compose_video(is_component_selected=non_selected_components),
+#     f"non_selected_{output_path}",
+# )
 ```
 
 ## denoise-video.py
@@ -74,6 +86,10 @@ que te un valor estàndar de 1.5, però es pot augmentar per modificar la relaci
 depen del tamany del video entre altres coses i pot tindre altres valors més adequats.
 
 També podem posar l'argument `--output-path` (o `-o`) per modificar el nom del fitxer que trau, que per defecte sera out.mp4.
+
+L'argument `--no-ffmpeg` es pot utilitzar en cas que no tingam ffmpeg instal·lat al sistema, ja que és necessari
+per poder guardar el video en format avi sense pèrdua.
+Amb aquesta flag, es guardarà en mp4 sense dependencies, però amb pèrdua.
 
 Per últim, si volem guardar el video de les components no seleccionades per comprovar que no ens hem deixat cap
 informació important, posem la flag `--save-not-selected-components` (o `-n`).
