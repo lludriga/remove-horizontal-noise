@@ -6,6 +6,8 @@ format:
         code-fold: true
 reference-location: margin
 jupyter: python3
+execute:
+    cache: true
 ---
 # Independent component analysis per eliminar soroll visual dels videos
 
@@ -55,19 +57,119 @@ frames = np.array(frames)
 
 ## Apliquem un filtre gaussia espacial
 
-Abans de poder aplicar l'anàlisi de components independents (ICA), processem el video amb un filtre Gaussia espacial, com fan tambe en
+Abans de poder aplicar l'anàlisi de components independents (ICA), processem el
+video amb un filtre gaussia espacial, com expliquen a
+(https://focalplane.biologists.com/2023/10/27/analyzing-calcium-imaging-data-using-python/)[Analyzing Calcium Imaging Data Using Python]
+"Cumulative explained variance plot shows how much of data variance is contained in the first N principal components.
+If the neural activity of all cells is highly correlated, then first principal component will explain most of the data.
+Data with more noise, or more heterogenous activity, will have slower accumulation of explained variance.
+We can see that by comparing PCA of original data and PCA of data blurred using spatial Gaussian filter."
 
-TODO: citar articles
+En el següent article també expliquen com es relaciona el tamany del kernel del filtre gaussia
+amb la relació senyal soroll (https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4457531/)[Comparing Analysis Methods in Functional Calcium Imaging of the Insect Brain]
 
-amb el tamany del kernel i tal i relacio senyal soroll i tal i 
+Nosaltres només utilitzarem la variable sigma, que determina la "força" del kernel, ja que aquesta determina unicament el tamany del kernel.
+Utilitzarem la mínima força que ens proporcione una quantitat de variança d'uns 0.95 en les primeres 100 a 120 components o així.
 
-TODO: citar articles
+```{python}
+def cumulative_variance_from_gauss_sigma(sigma, frames):
+    # We apply the filter spatially to each frame, leaving the time axis (0 axis)
+    if sigma > 0:
+        frames = gaussian_filter(frames, sigma = sigma, axes=(1,2))
+    # Convertim la array de 3 a 2 dimensions
+    frames = frames.reshape(len(frames), -1)
+    pca = PCA(random_state=0)
+    pca.fit(frames)
+    return np.cumsum(pca.explained_variance_ratio_)
+```
 
-## Analitzem amb un principal component analysis
 
-## Seleccionem el nombre de components necessaris
+::: {.callout-note}
+El següent codi pot tardar uns minuts, ja que fer el PCA pot costar uns minuts cada vegada.
+:::
+```{python}
+plt.figure(figsize=(8, 6))
+cumulative_variance_0 = cumulative_variance_from_gauss_sigma(0, frames)
+plt.plot(
+    np.arange(1, len(cumulative_variance_0) + 1),
+    cumulative_variance_0,
+    label='NoGauss',
+    marker="o",
+    linestyle="-",
+)
+cumulative_variance_1 = cumulative_variance_from_gauss_sigma(1, frames)
+plt.plot(
+    np.arange(1, len(cumulative_variance_1) + 1),
+    cumulative_variance_1,
+    label='Sigma1',
+    marker="o",
+    linestyle="-",
+)
+cumulative_variance_2 = cumulative_variance_from_gauss_sigma(2, frames)
+plt.plot(
+    np.arange(1, len(cumulative_variance_2) + 1),
+    cumulative_variance_2,
+    label='Sigma2',
+    marker="o",
+    linestyle="-",
+)
+plt.xlabel("Number of Components")
+plt.ylabel("Cumulative Explained Variance")
+plt.title("Cumulative Explained Variance by Number of PCA Components")
+plt.grid()
+plt.legend()
+plt.show()
+```
 
-## Apliquem el independent component analysis a les components
+
+També podem vore com afecta a la qualitat de la imatge i dels detalls aplicar aquest filtre:
+
+```{python}
+#| layout-ncol: 2
+#| layout-nrow: 2
+#| fig-cap: 
+#|   - "No Gauss filtering"
+#|   - "Gauss filter sigma=1"
+#|   - "Gauss filter sigma=2"
+#|   - "Gauss filter sigma=3"
+frame_0 = frames[0]
+fig, ax = plt.subplots()
+ax.imshow(frame_0, cmap='gray')
+
+frame_gauss_1 = gaussian_filter(frame_0, sigma=1)
+fig, ax = plt.subplots()
+ax.imshow(frame_gauss_1, cmap='gray')
+
+frame_gauss_2 = gaussian_filter(frame_0, sigma=2)
+fig, ax = plt.subplots()
+ax.imshow(frame_gauss_2, cmap='gray')
+
+frame_gauss_3 = gaussian_filter(frame_0, sigma=3)
+fig, ax = plt.subplots()
+ax.imshow(frame_gauss_3, cmap='gray')
+
+```
+
+Així, veiem que entre 1 i 2 seria suficient, podem agafar 1.5.
+
+## Apliquem el independent component analysis
+
+Com ja hem vist, apliquem un filtre gaussia al video amb sigma 1.5 i seleccionem suficients components
+com per a arribar a uns 0.95 de variança explicada per les components.
+A aquestes components, seleccionades per quantitat de variança explicada, li apliquem el ICA
+per tractar de separar les fonts que siguen més estadísticament independents de la variació, i així
+aïllem el soroll de la resta, que ens eixirà en diverses components.
+
+
+```{python}
+blur_frames = gaussian_filter(frames, sigma = 1.5, axes=(1,2))
+# Convertim la array de 3 a 2 dimensions
+blur_frames = blur_frames.reshape(len(blur_frames), -1)
+# Volem un 95% de variança explicada
+pca = PCA(0.95, random_state=0)
+components = pca.fit_transform(blur_frames)
+print(f"Obtenim {pca.n_components_} components")
+```
 
 ## Seleccionem les components que ens quedem per a la reconstrucció del video
 
