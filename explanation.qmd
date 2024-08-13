@@ -6,8 +6,6 @@ format:
         code-fold: true
 reference-location: margin
 jupyter: python3
-execute:
-    cache: true
 ---
 # Independent component analysis per eliminar soroll visual dels videos
 
@@ -54,6 +52,8 @@ cap.release()
 
 frames = np.array(frames)
 ```
+
+{{< video 0.mp4 >}}
 
 ## Apliquem un filtre gaussia espacial
 
@@ -156,23 +156,211 @@ Així, veiem que entre 1 i 2 seria suficient, podem agafar 1.5.
 
 Com ja hem vist, apliquem un filtre gaussia al video amb sigma 1.5 i seleccionem suficients components
 com per a arribar a uns 0.95 de variança explicada per les components.
-A aquestes components, seleccionades per quantitat de variança explicada, li apliquem el ICA
-per tractar de separar les fonts que siguen més estadísticament independents de la variació, i així
-aïllem el soroll de la resta, que ens eixirà en diverses components.
+Per poder aplicar el PCA al video, primer aplanem cada frame a una array de una dimensió,
+deixant la matriu de frames en dos dimensions, una la temporal i l'altra la llista de pixels.
 
 
 ```{python}
 blur_frames = gaussian_filter(frames, sigma = 1.5, axes=(1,2))
 # Convertim la array de 3 a 2 dimensions
 blur_frames = blur_frames.reshape(len(blur_frames), -1)
-# Volem un 95% de variança explicada
-pca = PCA(0.95, random_state=0)
-components = pca.fit_transform(blur_frames)
-print(f"Obtenim {pca.n_components_} components")
+pca = PCA(random_state=0)
+pca.fit(blur_frames)
+cumulative_variance = np.cumsum(pca.explained_variance_ratio_)
+
+n_components_90 = np.searchsorted(cumulative_variance, 0.9) + 1
+print(f"Necessitem {n_components_90} components per mantindre un 90% de variança.")
+n_components_95 = np.searchsorted(cumulative_variance, 0.95) + 1
+print(f"Necessitem {n_components_95} components per mantindre un 95% de variança.")
+n_components_96 = np.searchsorted(cumulative_variance, 0.96) + 1
+print(f"Necessitem {n_components_96} components per mantindre un 96% de variança.")
+n_components_97 = np.searchsorted(cumulative_variance, 0.97) + 1
+print(f"Necessitem {n_components_97} components per mantindre un 97% de variança.")
 ```
 
+A aquestes components, seleccionades per quantitat de variança explicada, li apliquem el ICA
+per tractar de separar les fonts que siguen més estadísticament independents de la variació, i així
+aïllem el soroll de la resta, que ens eixirà en diverses components.
+
+Elegim 117 per mantindre tota la variança possible i per raons que vindran en la següent secció, respecte
+a la selecció de les components.
+```{python}
+n_components = 117
+pca = PCA(n_components=n_components, random_state=0)
+pca_components = pca.fit_transform(blur_frames)
+ica = FastICA(n_components=n_components, random_state=0, max_iter=1000)
+ica_components = ica.fit_transform(pca_components)
+```
 ## Seleccionem les components que ens quedem per a la reconstrucció del video
+
+Podem automatitzar la selecció de les components per a reconstruir el video, sabent que
+aquelles components que codifiquen alguna part del soroll, mostraran unes línies verticals
+molt pronunciades a les seues components espacials (aquelles que donen un pes a cada pixel
+del video per a la reconstrucció a partir de la component temporal).
+
+Veiem com son les components.
+Només mostrarem les primeres 9 per poder anar visalitzant el que estem fent.
+```{python}
+#| layout-ncol: 3
+#| layout-nrow: 3
+#| fig-cap: 
+#|   - "Component 1"
+#|   - "Component 2"
+#|   - "Component 3"
+#|   - "Component 4"
+#|   - "Component 5"
+#|   - "Component 6"
+#|   - "Component 7"
+#|   - "Component 8"
+#|   - "Component 9"
+
+pca_spatial_components = pca.components_[:n_components]
+ica_spatial_components = ica.components_[:n_components]
+component_maps = np.zeros((n_components, *frame_shape))
+for i in range(n_components):
+    # Calculate ICA component in the original frame space
+    ica_component = np.matmul(pca_spatial_components.T, ica_spatial_components[i, :]).reshape(
+        frame_shape
+    )
+    component_maps[i] = ica_component
+
+# We are interested in absolute value strength
+component_maps = abs(component_maps)
+component_maps = cv2.normalize(
+    component_maps, None, 0, 255, cv2.NORM_MINMAX
+).astype(np.uint8)  # type: ignore
+
+for i in range(9):
+    fig, ax = plt.subplots()
+    ax.imshow(component_maps[i], cmap='gray')
+```
+
+
+Podem vore com algunes components tenen una franja molt clara, aquestes son les que volem llevar.
+Apliquem així el següent filtre.
+Primer, converim la imatge en binaria, blanc i negre:
+
+```{python}
+#| layout-ncol: 3
+#| layout-nrow: 3
+#| fig-cap: 
+#|   - "Component 1"
+#|   - "Component 2"
+#|   - "Component 3"
+#|   - "Component 4"
+#|   - "Component 5"
+#|   - "Component 6"
+#|   - "Component 7"
+#|   - "Component 8"
+#|   - "Component 9"
+
+for i in range(len(component_maps)):
+    ret, component_maps[i] = cv2.threshold(component_maps[i], np.quantile(component_maps[i], 0.95), 255, cv2.THRESH_BINARY)  # type: ignore
+
+
+for i in range(9):
+    fig, ax = plt.subplots()
+    ax.imshow(component_maps[i], cmap='gray')
+```
+
+Ara apliquem la transformada de Hough per a línies.
+Els paràmatres especifiquen el mínim per poder detectar una línia, en longitud, i el maxim de distancia entre pixels
+blancs per poder considerar-ho la mateixa linia o distinta.
+També explorem només línies horitzontals i verticals, amb el bot de 90 graus en theta.
+
+
+```{python}
+is_component_selected: list[bool] = []
+for map in component_maps:
+    lines = cv2.HoughLinesP(
+        map,
+        rho=1,  # resolution of the parameter rho (1 pixel)
+        theta=math.pi / 2,  # resolution of the theta parameter (90 degree)
+        threshold=200,
+        lines=None,
+        minLineLength=150,
+        maxLineGap=5,
+    )
+    is_component_selected.append(lines is None)
+
+for i in range(9):
+    print(f"Component {i + 1} {'does not contain noise.' if is_component_selected[i] else 'contains noise.'}")
+```
+
+Veiem com detecta correctament aquelles components que conten soroll.
+
+:::{.callout-caution}
+És important no tindre massa components, ja que en 200 components o més les línies de soroll es reparteixen al llarg de d'aquestes,
+sent més fines i molt més difícils de detectar.
+Allò ideal seria treballar amb un 95% de components amb unes 100 components.
+:::
 
 ## Reconstruim el video
 
+Finalment, només ens queda reconstruir el video amb les components seleccionades.
+
+```{python}
+inverted_selection = np.invert(is_component_selected)
+inverted_indices = [
+    i for i, include in enumerate(inverted_selection) if include
+]
+remaining_components = ica_components.copy()
+remaining_components[:, inverted_indices] = 0
+# Reconstruct, reshape and normalize frames
+data = ica.inverse_transform(remaining_components)
+data = pca.inverse_transform(data)
+video = data.reshape(-1, *frame_shape)
+```
+
+I el guardem (per ara en mp4, per guardar en avi ens fara falt utilitzar ffmpeg)
+
+```{python}
+def save_frames_as_mp4(frames, output_path):
+    frames = cv2.normalize(frames, None, 0, 255, cv2.NORM_MINMAX).astype(  # type: ignore
+            np.uint8
+    )
+
+    fourcc = cv2.VideoWriter.fourcc(*"mp4v")
+    out = cv2.VideoWriter(
+        output_path,
+        fourcc,
+        fps,
+        (frame_shape[1], frame_shape[0]),
+        isColor=False,
+    )
+
+    for frame in frames:
+        out.write(frame)
+
+    out.release()
+    print(f"Video saved as {output_path}")
+```
+
+```{python}
+save_frames_as_mp4(video, "denoised.mp4")
+```
+
+{{< video denoised.mp4 >}}
+
 ## Extra: reconstruim les components no utilitzades
+
+Per asegurar-nos que no hem llevat informació de les neurones, podem reconstruir
+totes les components que no hem utilitzat i vore que video ens dona.
+Si tot ha functionat bé, només deuria incloure les línies de soroll.
+
+```{python}
+inverted_selection = is_component_selected
+inverted_indices = [
+    i for i, include in enumerate(inverted_selection) if include
+]
+remaining_components = ica_components.copy()
+remaining_components[:, inverted_indices] = 0
+# Reconstruct, reshape and normalize frames
+data = ica.inverse_transform(remaining_components)
+data = pca.inverse_transform(data)
+video = data.reshape(-1, *frame_shape)
+
+save_frames_as_mp4(video, "noise.mp4")
+```
+
+{{< video noise.mp4 >}}
