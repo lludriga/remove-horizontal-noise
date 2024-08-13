@@ -859,6 +859,7 @@ class VideoAnalyzer:
             )
             n_components = self.pca.n_components_from_variance(variance_threshold)
             print(f"That would need {n_components} number of components.")
+            print("Keep in mind that it is not recommended more than 140")
             print("Do you want to get that many number of components?")
             chosen = ask_y_or_n()
 
